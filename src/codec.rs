@@ -1,11 +1,11 @@
 use log::{debug, warn};
 
 use crate::{
-    AMediaCrypto, AMediaFormat, ANativeWindow, AudioFrame, Frame, MediaFormat, MediaStatus,
-    NativeWindow, SampleFormat, VideoFrame, ENCODING_PCM_16BIT, ENCODING_PCM_FLOAT,
+    AMediaCrypto, AMediaFormat, ANativeWindow, AudioFrame, ENCODING_PCM_16BIT, ENCODING_PCM_FLOAT,
+    Frame, MediaFormat, MediaStatus, NativeWindow, SampleFormat, VideoFrame,
 };
 use std::{
-    ffi::{c_void, CString},
+    ffi::{CString, c_void},
     marker::PhantomData,
     os::raw::c_char,
     ptr::{null_mut, slice_from_raw_parts},
@@ -920,7 +920,9 @@ impl<'a> MediaCodec<'a> {
                 if buffer.is_null() {
                     // Return the buffer to the codec, it's not valid
                     AMediaCodec_queueInputBuffer(self.inner, index as usize, 0, 0, 0, 0);
-                    warn!("Got an index with a null input buffer! What is going on here??? Index: {index}");
+                    warn!(
+                        "Got an index with a null input buffer! What is going on here??? Index: {index}"
+                    );
                     return Err(MediaStatus::ErrorUnknown);
                 }
 

@@ -1,34 +1,38 @@
 [package]
 name = "mediacodec"
-version = "0.1.2"
-edition = "2021"
+version = "0.1.3"
+edition = "2024"
 readme = "README.md"
-authors = [
-    "Adebayo Jagunmolu <hardebahyho@gmail.com>"
-]
+authors = ["Adebayo Jagunmolu <hardebahyho@gmail.com>"]
 description = "Rust bindings to MediaCodec, with an easy-to-use API"
 repository = "https://github.com/bayo-code/rust_mediacodec"
 license = "MIT"
 keywords = ["ffi", "bindings", "multimedia", "codec", "android"]
-categories = ["api-bindings", "encoding", "multimedia", "multimedia::audio", "multimedia::video"]
+categories = [
+    "api-bindings",
+    "encoding",
+    "multimedia",
+    "multimedia::audio",
+    "multimedia::video",
+]
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-#[lib]
-#name = "mediacodec"
-#crate-type = ["cdylib"]
-#
-#[[example]]
-#name = "demuxing"
-#crate-type = ["cdylib"]
-#
-#[[example]]
-#name = "decoding"
-#crate-type = ["cdylib"]
+[lib]
+name = "mediacodec"
+crate-type = ["cdylib"]
 
-[dependencies]
-log = "0.4"
+[[example]]
+name = "demuxing"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "decoding"
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+log = "0.4.14"
 android_log = "0.1.3"
 jni = "0.19.0"
 javavm = "0.1.2"

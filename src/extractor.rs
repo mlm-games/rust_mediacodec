@@ -11,7 +11,7 @@ use crate::{AMediaFormat, CodecInputBuffer, MediaFormat, MediaStatus};
 pub enum SeekMode {
     SeekClosestSync,
     SeekNextSync,
-    SeekPreviousSync
+    SeekPreviousSync,
 }
 
 #[repr(C)]
@@ -187,7 +187,7 @@ impl MediaExtractor {
     pub fn has_next(&self) -> bool {
         self.has_next
     }
-    
+
     pub fn seek_to(&self, pos_us: i64, mode: SeekMode) {
         unsafe {
             AMediaExtractor_seekTo(self.inner, pos_us, mode as i32);

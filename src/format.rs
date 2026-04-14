@@ -1,5 +1,5 @@
 use std::{
-    ffi::{c_void, CStr, CString},
+    ffi::{CStr, CString, c_void},
     os::raw::c_char,
     ptr::null_mut,
 };
@@ -26,15 +26,15 @@ extern "C" {
 
     /// Available since API level 21.
     fn AMediaFormat_getInt32(format: *mut AMediaFormat, name: *const c_char, out: *mut i32)
-        -> bool;
+    -> bool;
 
     /// Available since API level 21.
     fn AMediaFormat_getInt64(format: *mut AMediaFormat, name: *const c_char, out: *mut i64)
-        -> bool;
+    -> bool;
 
     /// Available since API level 21.
     fn AMediaFormat_getFloat(format: *mut AMediaFormat, name: *const c_char, out: *mut f32)
-        -> bool;
+    -> bool;
 
     /// Available since API level 28.
     #[cfg(feature = "api28")]

@@ -1,6 +1,6 @@
 use std::{ffi::c_void, ops::BitOr, ptr::null_mut};
 
-use jni::{objects::JObject, JNIEnv};
+use jni::{JNIEnv, objects::JObject};
 
 /// Represents an image buffer (or a Surface in Java)
 #[repr(C)]
