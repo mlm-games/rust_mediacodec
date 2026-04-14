@@ -22,7 +22,7 @@ struct AMediaExtractor {
 }
 
 #[link(name = "mediandk")]
-extern "C" {
+unsafe extern "C" {
     /// Since: API 21
     fn AMediaExtractor_new() -> *mut AMediaExtractor;
 

@@ -20,7 +20,7 @@ pub enum OutputFormat {
 // FFI FUNCTIONS
 
 #[link(name = "mediandk")]
-extern "C" {
+unsafe extern "C" {
     /// Since: API 21
     pub fn AMediaMuxer_new(fd: i32, format: OutputFormat) -> *mut AMediaMuxer;
 

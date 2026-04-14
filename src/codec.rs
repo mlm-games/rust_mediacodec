@@ -181,7 +181,7 @@ struct _AMediaCodecOnAsyncNotifyCallback {
 // FFI FUNCTIONS BEGIN
 
 #[link(name = "mediandk")]
-extern "C" {
+unsafe extern "C" {
     /// Create codec by name. Use this if you know the exact codec you want to use.
     /// When configuring, you will need to specify whether to use the codec as an encoder or decoder.
     /// <hr />

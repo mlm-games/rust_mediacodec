@@ -126,7 +126,7 @@ pub struct ARect {
 // Functions start
 
 #[link(name = "android")]
-extern "C" {
+unsafe extern "C" {
     fn ANativeWindow_fromSurface(env: JNIEnv, surface: JObject) -> *mut ANativeWindow;
 
     #[cfg(feature = "api26")]

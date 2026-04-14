@@ -14,7 +14,7 @@ pub struct AMediaFormat {
 }
 
 #[link(name = "mediandk")]
-extern "C" {
+unsafe extern "C" {
     /// Available since API level 21.
     fn AMediaFormat_new() -> *mut AMediaFormat;
 

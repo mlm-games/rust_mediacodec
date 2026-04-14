@@ -1,7 +1,7 @@
 use log::debug;
 use mediacodec::{Frame, MediaExtractor, SampleFormat, VideoFrame};
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn process() {
     let mut extractor = MediaExtractor::from_url("/path/to/a/resource").unwrap();
 
