@@ -1,8 +1,7 @@
 use std::{ffi::c_void, ops::BitOr, ptr::null_mut};
 
-use jni::{JNIEnv, objects::JObject};
+use jni::objects::JObject;
 
-/// Represents an image buffer (or a Surface in Java)
 #[repr(C)]
 #[derive(Debug)]
 pub struct ANativeWindow {
@@ -10,47 +9,29 @@ pub struct ANativeWindow {
     _marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
 
-/// Window Formats
 #[derive(Debug, Clone, Copy)]
 pub enum NativeWindowFormat {
-    /// 32 bits per pixel (8 bits per channel)
-    ///
-    /// GLES: GL_RGBA8
     Rgba8 = 1,
-    /// 32 bits per pixel (8 bits per channel, alpha values are ignored)
-    ///
-    /// GLES: GL_RGB8
     Rgb8 = 2,
-    /// 32 bits per pixel (8 bits per channel, alpha values are ignored)
-    ///
-    /// GLES: GL_RGB565
     Rgb565 = 4,
-
-    /// YUV 420 888 format
-    ///
-    /// Must have an even width and height. Can be accessed in OpenGL shaders through an external sampler.
-    /// Does not support mip-maps, cube-maps or multi-layered textures.
     Yuv420 = 0x23,
-    /// Some unknown, undocumented format
     Other,
 }
 
 impl NativeWindowFormat {
-    fn values() -> Vec<Self> {
-        vec![Self::Rgba8, Self::Rgb8, Self::Rgb565, Self::Yuv420]
+    fn values() -> &'static [Self] {
+        use NativeWindowFormat::*;
+        &[Rgba8, Rgb8, Rgb565, Yuv420]
     }
 }
 
 impl From<isize> for NativeWindowFormat {
     fn from(value: isize) -> Self {
-        let values = Self::values();
-
-        for item in values {
+        for &item in Self::values() {
             if item as isize == value {
                 return item;
             }
         }
-
         Self::Other
     }
 }
@@ -69,7 +50,6 @@ pub enum NativeWindowTransform {
 
 impl BitOr for NativeWindowTransform {
     type Output = isize;
-
     fn bitor(self, rhs: Self) -> Self::Output {
         self as isize | rhs as isize
     }
@@ -83,14 +63,12 @@ pub struct NativeWindowBuffer {
     pub stride: i32,
     pub format: i32,
     pub bits: *mut c_void,
-    /// Do not touch!
     reserved: [u32; 6],
     window: *mut ANativeWindow,
 }
 
 impl NativeWindowBuffer {
     fn new(window: *mut ANativeWindow) -> Self {
-        // Acquire a reference to this window so that it doesn't get dropped when we drop the parent
         unsafe { ANativeWindow_acquire(window) };
         Self {
             width: 0,
@@ -123,43 +101,35 @@ pub struct ARect {
     pub bottom: i32,
 }
 
-// Functions start
-
 #[link(name = "android")]
 unsafe extern "C" {
-    fn ANativeWindow_fromSurface(env: JNIEnv, surface: JObject) -> *mut ANativeWindow;
-
+    fn ANativeWindow_fromSurface(
+        env: *mut jni::sys::JNIEnv,
+        surface: jni::sys::jobject,
+    ) -> *mut ANativeWindow;
     #[cfg(feature = "api26")]
-    /// Since API 26
-    fn ANativeWindow_toSurface(env: JNIEnv, window: *mut ANativeWindow) -> JObject;
-
+    fn ANativeWindow_toSurface(
+        env: *mut jni::sys::JNIEnv,
+        window: *mut ANativeWindow,
+    ) -> jni::sys::jobject;
     fn ANativeWindow_acquire(window: *mut ANativeWindow);
-
     fn ANativeWindow_release(window: *mut ANativeWindow);
-
     fn ANativeWindow_getWidth(window: *mut ANativeWindow) -> i32;
-
     fn ANativeWindow_getHeight(window: *mut ANativeWindow) -> i32;
-
     fn ANativeWindow_getFormat(window: *mut ANativeWindow) -> i32;
-
     fn ANativeWindow_setBuffersGeometry(
         window: *mut ANativeWindow,
         width: i32,
         height: i32,
         format: i32,
     ) -> i32;
-
     fn ANativeWindow_lock(
         window: *mut ANativeWindow,
         buffer: *mut NativeWindowBuffer,
         rect: *mut ARect,
     ) -> i32;
-
     fn ANativeWindow_unlockAndPost(window: *mut ANativeWindow) -> i32;
 }
-
-// Functions end
 
 #[derive(Debug)]
 pub struct NativeWindow {
@@ -172,16 +142,17 @@ impl NativeWindow {
     }
 
     pub fn from_surface(surface: JObject) -> Self {
-        unsafe {
-            let env = javavm::get_env();
-            Self::from_raw(ANativeWindow_fromSurface(env, surface))
-        }
+        let ctx = ndk_context::android_context();
+        let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
+        let raw_env = vm
+            .attach_current_thread(|env| -> Result<_, jni::errors::Error> { Ok(env.get_raw()) })
+            .expect("failed to attach thread");
+        unsafe { Self::from_raw(ANativeWindow_fromSurface(raw_env, surface.as_raw())) }
     }
 
     #[cfg(feature = "api26")]
-    pub fn to_surface(&self) -> JObject {
-        let env = javavm::get_env();
-        unsafe { ANativeWindow_toSurface(env, self.inner) }
+    pub fn to_surface<'local>(&self, env: &mut JNIEnv<'local>) -> JObject<'local> {
+        unsafe { JObject::from_raw(ANativeWindow_toSurface(env.get_raw(), self.inner)) }
     }
 
     pub fn width(&self) -> i32 {
@@ -202,11 +173,6 @@ impl NativeWindow {
         }
     }
 
-    /// Lock the window's next surface for writing. `bounds` is used as an in/out parameter, upon entering the function, it contains the dirty region, that is, the region the caller intends to redraw. When the function returns, `bounds` is updated with the actual area the caller needs to redraw
-    ///
-    /// Returns The `NativeWindowBuffer` on success, and None on error.
-    ///
-    /// The window's surface will be unlocked automatically when the buffer is dropped.
     pub fn lock(&mut self, bounds: &mut ARect) -> Option<NativeWindowBuffer> {
         unsafe {
             let mut buffer = NativeWindowBuffer::new(self.inner);
@@ -222,8 +188,8 @@ impl Clone for NativeWindow {
     fn clone(&self) -> Self {
         unsafe {
             ANativeWindow_acquire(self.inner);
-            Self { inner: self.inner }
         }
+        Self { inner: self.inner }
     }
 }
 
@@ -234,3 +200,6 @@ impl Drop for NativeWindow {
         }
     }
 }
+
+unsafe impl Send for NativeWindow {}
+unsafe impl Sync for NativeWindow {}

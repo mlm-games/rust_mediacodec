@@ -1,8 +1,4 @@
-use std::{
-    ffi::{CStr, CString},
-    marker::PhantomData,
-    os::raw::c_char,
-};
+use std::{ffi::CString, os::raw::c_char};
 
 use log::{debug, info};
 
@@ -23,65 +19,37 @@ struct AMediaExtractor {
 
 #[link(name = "mediandk")]
 unsafe extern "C" {
-    /// Since: API 21
     fn AMediaExtractor_new() -> *mut AMediaExtractor;
-
-    /// Since: API 21
     fn AMediaExtractor_delete(extractor: *mut AMediaExtractor) -> isize;
-
-    /// Since: API 21
     fn AMediaExtractor_setDataSourceFd(
         extractor: *mut AMediaExtractor,
         fd: i32,
         offset: u64,
         length: u64,
     ) -> isize;
-
-    /// Since: API 21
     fn AMediaExtractor_setDataSource(
         extractor: *mut AMediaExtractor,
         location: *const c_char,
     ) -> isize;
-
-    /// Since: API 21
     fn AMediaExtractor_getTrackCount(extractor: *mut AMediaExtractor) -> usize;
-
-    /// Since: API 21
     fn AMediaExtractor_getTrackFormat(
         extractor: *mut AMediaExtractor,
         index: usize,
     ) -> *mut AMediaFormat;
-
-    /// Since: API 21
     fn AMediaExtractor_selectTrack(extractor: *mut AMediaExtractor, index: usize) -> isize;
-
-    /// Since: API 21
     fn AMediaExtractor_unselectTrack(extractor: *mut AMediaExtractor, index: usize) -> isize;
-
-    /// Since: API 21
     fn AMediaExtractor_readSampleData(
         extractor: *mut AMediaExtractor,
         buffer: *mut u8,
         capacity: usize,
     ) -> isize;
-
-    /// Since: API 21
     fn AMediaExtractor_getSampleFlags(extractor: *mut AMediaExtractor) -> u32;
-
-    /// Since: API 21
     fn AMediaExtractor_getSampleTrackIndex(extractor: *mut AMediaExtractor) -> i32;
-
-    /// Since: API 21
     fn AMediaExtractor_getSampleTime(extractor: *mut AMediaExtractor) -> i64;
-
-    /// Since: API 21
     fn AMediaExtractor_advance(extractor: *mut AMediaExtractor) -> bool;
-
-    /// Since: API 21
     fn AMediaExtractor_seekTo(extractor: *mut AMediaExtractor, seek_pos_us: i64, mode: i32) -> i32;
 }
 
-/// MediaExtractor is a demuxer that opens a file or resource and demuxes the data to hand over to MediaCodec
 #[derive(Debug)]
 pub struct MediaExtractor {
     inner: *mut AMediaExtractor,
@@ -89,7 +57,6 @@ pub struct MediaExtractor {
 }
 
 impl MediaExtractor {
-    /// Creates a new MediaExtractor
     fn new() -> Self {
         Self {
             inner: unsafe { AMediaExtractor_new() },
@@ -101,14 +68,10 @@ impl MediaExtractor {
     pub fn from_url(path: &str) -> Result<Self, MediaStatus> {
         unsafe {
             let mut me = Self::new();
-
-            let path = CString::new(path).unwrap();
-
-            let result = AMediaExtractor_setDataSource(me.inner, path.as_ptr());
+            let path_cs = CString::new(path).unwrap();
+            let result = AMediaExtractor_setDataSource(me.inner, path_cs.as_ptr());
             MediaStatus::make_result(result)?;
-
             me.has_next = true;
-
             Ok(me)
         }
     }
@@ -132,7 +95,6 @@ impl MediaExtractor {
                 debug!("Invalid track index {index}");
                 return None;
             }
-
             let fmt = AMediaExtractor_getTrackFormat(self.inner, index);
             Some(MediaFormat::from_raw(fmt))
         }
@@ -169,16 +131,13 @@ impl MediaExtractor {
             if !self.has_next {
                 return false;
             }
-
             let count = AMediaExtractor_readSampleData(self.inner, buffer.buffer, buffer.size);
             if count > 0 {
                 buffer.set_write_size(count as usize);
                 buffer.set_time(self.sample_time() as u64);
             }
             buffer.set_flags(self.sample_flags());
-
             self.has_next = AMediaExtractor_advance(self.inner);
-
             self.has_next
         }
     }

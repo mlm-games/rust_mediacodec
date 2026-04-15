@@ -1,11 +1,11 @@
 use log::{debug, warn};
 
 use crate::{
-    AMediaCrypto, AMediaFormat, ANativeWindow, AudioFrame, ENCODING_PCM_16BIT, ENCODING_PCM_FLOAT,
-    Frame, MediaFormat, MediaStatus, NativeWindow, SampleFormat, VideoFrame,
+    AMediaCrypto, AMediaFormat, ANativeWindow, AudioFrame, Frame, MediaFormat, MediaStatus,
+    NativeWindow, SampleFormat, VideoFrame, ENCODING_PCM_16BIT, ENCODING_PCM_FLOAT,
 };
 use std::{
-    ffi::{CString, c_void},
+    ffi::{c_void, CString},
     marker::PhantomData,
     os::raw::c_char,
     ptr::{null_mut, slice_from_raw_parts},
