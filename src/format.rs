@@ -1,5 +1,5 @@
 use std::{
-    ffi::{CStr, CString, c_void},
+    ffi::{c_void, CStr, CString},
     fmt,
     os::raw::c_char,
     ptr::null_mut,
@@ -20,11 +20,11 @@ unsafe extern "C" {
     fn AMediaFormat_delete(format: *mut AMediaFormat) -> isize;
     fn AMediaFormat_toString(format: *mut AMediaFormat) -> *const c_char;
     fn AMediaFormat_getInt32(format: *mut AMediaFormat, name: *const c_char, out: *mut i32)
-    -> bool;
+        -> bool;
     fn AMediaFormat_getInt64(format: *mut AMediaFormat, name: *const c_char, out: *mut i64)
-    -> bool;
+        -> bool;
     fn AMediaFormat_getFloat(format: *mut AMediaFormat, name: *const c_char, out: *mut f32)
-    -> bool;
+        -> bool;
     #[cfg(feature = "api28")]
     fn AMediaFormat_getDouble(
         format: *mut AMediaFormat,
@@ -111,7 +111,8 @@ impl MediaFormat {
     }
 
     pub fn set_i32(&mut self, name: &str, value: i32) -> bool {
-        unsafe { AMediaFormat_setInt32(self.inner, name.as_ptr().cast(), value) }
+        let name = CString::new(name).unwrap();
+        unsafe { AMediaFormat_setInt32(self.inner, name.as_ptr(), value) }
     }
 
     pub fn get_i32(&self, name: &str) -> Option<i32> {

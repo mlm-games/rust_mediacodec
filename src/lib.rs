@@ -3,22 +3,22 @@
 //! # Examples
 //!
 //! ### Decoding
-//! ```edition2024
+//! ```
 //! # use mediacodec::{Frame, MediaCodec, MediaExtractor, SampleFormat, VideoFrame};
 //! # #[unsafe(no_mangle)]
 //! # extern "C" fn process() {
 //!     let mut extractor = MediaExtractor::from_url("/path/to/a/resource").unwrap();
-//!     // … (see the `examples/decoding.rs` file for the full example)
+//!     // ... (see the `examples/decoding.rs` file for the full example)
 //! # }
 //! ```
 //!
 //! ### Demuxing
-//! ```edition2024
-//! # use mediacodec::{MediaExtractor};
+//! ```
+//! # use mediacodec::MediaExtractor;
 //! # #[unsafe(no_mangle)]
 //! # extern "C" fn process() {
 //!     let mut extractor = MediaExtractor::from_url("/path/to/a/resource").unwrap();
-//!     // … (see the `examples/demuxing.rs` file for the full example)
+//!     // ... (see the `examples/demuxing.rs` file for the full example)
 //! # }
 //! ```
 

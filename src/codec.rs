@@ -14,10 +14,10 @@ use std::{
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BufferInfo {
-    offset: i32,
-    size: i32,
-    presentation_time_us: i64,
-    flags: u32,
+    pub offset: i32,
+    pub size: i32,
+    pub presentation_time_us: i64,
+    pub flags: u32,
 }
 
 #[repr(C)]
@@ -761,6 +761,19 @@ impl CodecOutputBuffer<'_> {
     /// This only works for video decoder buffers with a surface attached
     pub fn set_render(&mut self, render: bool) {
         self.render = render;
+    }
+
+    pub fn buffer_slice_pub(&self) -> Option<&[u8]> {
+        if !self.using_buffers {
+            return None;
+        }
+
+        unsafe {
+            Some(&*slice_from_raw_parts(
+                (self.buffer as i32 + self.info.offset) as *mut u8,
+                self.info.size as usize,
+            ))
+        }
     }
 }
 

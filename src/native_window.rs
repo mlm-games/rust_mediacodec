@@ -27,12 +27,11 @@ impl NativeWindowFormat {
 
 impl From<isize> for NativeWindowFormat {
     fn from(value: isize) -> Self {
-        for &item in Self::values() {
-            if item as isize == value {
-                return item;
-            }
-        }
-        Self::Other
+        Self::values()
+            .iter()
+            .find(|&&v| v as isize == value)
+            .copied()
+            .unwrap_or(Self::Other)
     }
 }
 
@@ -42,10 +41,8 @@ pub enum NativeWindowTransform {
     MirrorHorizontal = 0x01,
     MirrorVertical = 0x02,
     Rotate90 = 0x04,
-    Rotate180 = NativeWindowTransform::MirrorHorizontal as isize
-        | NativeWindowTransform::MirrorVertical as isize,
-    Rotate270 =
-        NativeWindowTransform::Rotate180 as isize | NativeWindowTransform::Rotate90 as isize,
+    Rotate180 = 0x01 | 0x02,
+    Rotate270 = 0x01 | 0x02 | 0x04,
 }
 
 impl BitOr for NativeWindowTransform {
@@ -87,8 +84,8 @@ impl Drop for NativeWindowBuffer {
         if !self.window.is_null() {
             unsafe {
                 ANativeWindow_unlockAndPost(self.window);
+                ANativeWindow_release(self.window);
             }
-            NativeWindow::from_raw(self.window);
         }
     }
 }
@@ -141,18 +138,28 @@ impl NativeWindow {
         Self { inner }
     }
 
-    pub fn from_surface(surface: JObject) -> Self {
+    pub fn from_surface(surface: JObject<'_>) -> Self {
         let ctx = ndk_context::android_context();
-        let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
+        let vm = unsafe { jni::vm::JavaVM::from_raw(ctx.vm().cast()) };
         let raw_env = vm
-            .attach_current_thread(|env| -> Result<_, jni::errors::Error> { Ok(env.get_raw()) })
-            .expect("failed to attach thread");
-        unsafe { Self::from_raw(ANativeWindow_fromSurface(raw_env, surface.as_raw())) }
+            .attach_current_thread(|env| unsafe {
+                Ok::<*mut ANativeWindow, jni::errors::Error>(ANativeWindow_fromSurface(
+                    env.get_raw(),
+                    surface.as_raw(),
+                ))
+            })
+            .expect("failed to attach current thread to JVM");
+        unsafe { Self::from_raw(raw_env) }
     }
 
     #[cfg(feature = "api26")]
-    pub fn to_surface<'local>(&self, env: &mut JNIEnv<'local>) -> JObject<'local> {
-        unsafe { JObject::from_raw(ANativeWindow_toSurface(env.get_raw(), self.inner)) }
+    pub fn to_surface<'local>(
+        &self,
+        env: &mut jni::env::Env<'local>,
+    ) -> jni::objects::JObject<'local> {
+        unsafe {
+            jni::objects::JObject::from_raw(ANativeWindow_toSurface(env.get_raw(), self.inner))
+        }
     }
 
     pub fn width(&self) -> i32 {
@@ -174,30 +181,22 @@ impl NativeWindow {
     }
 
     pub fn lock(&mut self, bounds: &mut ARect) -> Option<NativeWindowBuffer> {
-        unsafe {
-            let mut buffer = NativeWindowBuffer::new(self.inner);
-            if ANativeWindow_lock(self.inner, &mut buffer, bounds) == 0 {
-                return Some(buffer);
-            }
-        }
-        None
+        let mut buffer = NativeWindowBuffer::new(self.inner);
+        let ok = unsafe { ANativeWindow_lock(self.inner, &mut buffer, bounds) } == 0;
+        ok.then_some(buffer)
     }
 }
 
 impl Clone for NativeWindow {
     fn clone(&self) -> Self {
-        unsafe {
-            ANativeWindow_acquire(self.inner);
-        }
+        unsafe { ANativeWindow_acquire(self.inner) };
         Self { inner: self.inner }
     }
 }
 
 impl Drop for NativeWindow {
     fn drop(&mut self) {
-        unsafe {
-            ANativeWindow_release(self.inner);
-        }
+        unsafe { ANativeWindow_release(self.inner) };
     }
 }
 
