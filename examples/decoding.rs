@@ -34,12 +34,16 @@ extern "C" fn process() {
 
         // Fetch the codec's input buffer
         while let Ok(mut buffer) = codec.dequeue_input() {
-            if !extractor.read_next(&mut buffer) {
-                debug!(
-                    "MediaExtractor.read_next() returned false! has_next(): {}",
-                    extractor.has_next()
-                );
-                break; // VERY IMPORTANT, there's nothing else to DO, so break!!!
+            match extractor.read_next(&mut buffer) {
+                Ok(true) => {}
+                Ok(false) => {
+                    debug!(
+                        "MediaExtractor.read_next() returned false! has_next(): {}",
+                        extractor.has_next()
+                    );
+                    break;
+                }
+                Err(_) => break,
             }
 
             // When the buffer gets dropped (here), the buffer will be queued back to MediaCodec

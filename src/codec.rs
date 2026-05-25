@@ -224,7 +224,7 @@ unsafe extern "C" {
     /// Since: API 21
     fn AMediaCodec_stop(codec: *mut AMediaCodec) -> MediaStatus;
 
-    /// Flush the codec's input and output. All indices previously returned from calls to `AMediaCodec_dequeueInputBuffer` and `AMediaCodec_dequeueOutpuBuffer` become invalid.
+    /// Flush the codec's input and output. All indices previously returned from calls to `AMediaCodec_dequeueInputBuffer` and `AMediaCodec_dequeueOutputBuffer` become invalid.
     /// <hr />
     /// Since: API 21
     fn AMediaCodec_flush(codec: *mut AMediaCodec) -> MediaStatus;
@@ -651,17 +651,26 @@ impl CodecOutputBuffer<'_> {
     }
 
     /// Returns the buffer as a u8 slice
-    fn buffer_slice(&self) -> Option<&[u8]> {
+    pub fn buffer_slice(&self) -> Option<&[u8]> {
         if !self.using_buffers {
             return None;
         }
 
+        let offset = self.info.offset as usize;
+        let size = self.info.size as usize;
+
+        if offset + size > self._size {
+            warn!(
+                "Buffer offset ({}) + size ({}) exceeds capacity ({})",
+                offset, size, self._size
+            );
+            return None;
+        }
+
         unsafe {
-            // Return the size of the readable buffer, instead of the buffer size itself.
-            // Returning the entire buffer size is useless for the output buffer, as we only need to read data from it
             Some(&*slice_from_raw_parts(
-                (self.buffer as i32 + self.info.offset) as *mut u8,
-                self.info.size as usize,
+                self.buffer.add(offset) as *const u8,
+                size,
             ))
         }
     }
@@ -695,7 +704,7 @@ impl CodecOutputBuffer<'_> {
                 return None;
             }
 
-            match encoding as usize {
+            match encoding {
                 ENCODING_PCM_16BIT => {
                     let slice = self.buffer_slice()?;
                     let len = slice.len() / std::mem::size_of::<i16>();
@@ -727,7 +736,7 @@ impl CodecOutputBuffer<'_> {
                         warn!("Potentially wrong results ahead!");
                     }
 
-                    // Transmute as an i16 slice
+                    // Transmute as an f32 slice
                     let buffer = unsafe {
                         let buffer = std::mem::transmute::<*const u8, *const f32>(slice.as_ptr());
                         let raw = std::ptr::slice_from_raw_parts(buffer, len);
@@ -763,18 +772,6 @@ impl CodecOutputBuffer<'_> {
         self.render = render;
     }
 
-    pub fn buffer_slice_pub(&self) -> Option<&[u8]> {
-        if !self.using_buffers {
-            return None;
-        }
-
-        unsafe {
-            Some(&*slice_from_raw_parts(
-                (self.buffer as i32 + self.info.offset) as *mut u8,
-                self.info.size as usize,
-            ))
-        }
-    }
 }
 
 impl Drop for CodecOutputBuffer<'_> {
@@ -953,33 +950,44 @@ impl<'a> MediaCodec<'a> {
         unsafe {
             let mut info = BufferInfo::default();
             let index = AMediaCodec_dequeueOutputBuffer(self.inner, &mut info, 100);
-            let mut out_size = 0;
 
-            if index >= 0 {
-                let mut buffer = null_mut();
-                if self.using_buffers {
-                    buffer = AMediaCodec_getOutputBuffer(self.inner, index as usize, &mut out_size);
+            match index {
+                // TryAgainLater: no output available yet
+                // OutputFormatChanged: format changed; next output_format() returns new format
+                // OutputBuffersChanged: buffers reallocated
+                -1 | -2 | -3 => Err(MediaStatus::ErrorWouldBlock),
+                idx if idx >= 0 => {
+                    let mut out_size = 0;
+                    let mut buffer = null_mut();
+                    if self.using_buffers {
+                        buffer = AMediaCodec_getOutputBuffer(
+                            self.inner,
+                            idx as usize,
+                            &mut out_size,
+                        );
 
-                    if buffer.is_null() {
-                        AMediaCodec_releaseOutputBuffer(self.inner, index as usize, false);
-                        return Err(MediaStatus::ErrorUnknown);
+                        if buffer.is_null() {
+                            AMediaCodec_releaseOutputBuffer(self.inner, idx as usize, false);
+                            return Err(MediaStatus::ErrorUnknown);
+                        }
                     }
+
+                    let format = self.output_format().ok_or(MediaStatus::ErrorUnknown)?;
+
+                    let codec_buffer = CodecOutputBuffer::new(
+                        self.inner,
+                        info,
+                        idx as usize,
+                        self.using_buffers,
+                        buffer,
+                        out_size,
+                        format,
+                    );
+
+                    Ok(codec_buffer)
                 }
-
-                let codec_buffer = CodecOutputBuffer::new(
-                    self.inner,
-                    info,
-                    index as usize,
-                    self.using_buffers,
-                    buffer,
-                    out_size,
-                    self.output_format().unwrap(),
-                );
-
-                return Ok(codec_buffer);
+                _ => Err(MediaStatus::ErrorUnknown),
             }
-
-            Err(MediaStatus::ErrorUnknown)
         }
     }
 }

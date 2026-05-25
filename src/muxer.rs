@@ -9,7 +9,7 @@ pub struct AMediaMuxer {
     _marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
 
-#[repr(C)]
+#[repr(i32)]
 #[derive(Clone, Copy, Debug)]
 pub enum OutputFormat {
     Mpeg4 = 0,
@@ -73,6 +73,7 @@ pub struct MediaMuxer {
     inner: *mut AMediaMuxer,
     latitude: f32,
     longitude: f32,
+    location_set: bool,
     orientation_hint: i32,
     track_formats: Vec<MediaFormat>,
     state: MuxerState,
@@ -95,6 +96,7 @@ impl MediaMuxer {
             inner: value,
             latitude: 0f32,
             longitude: 0f32,
+            location_set: false,
             orientation_hint: 0,
             track_formats: vec![],
             state: MuxerState::Uninitialized,
@@ -112,16 +114,13 @@ impl MediaMuxer {
     ///
     /// Longitude must be in the range (-180, 180)
     pub fn set_location(&mut self, latitude: f32, longitude: f32) -> &mut Self {
-        match latitude {
-            value if value >= -90.0 && value <= 90.0 => self.latitude = latitude,
-            _ => {}
+        if latitude >= -90.0 && latitude <= 90.0 {
+            self.latitude = latitude;
         }
-
-        match longitude {
-            value if value >= -180.0 && value <= 180.0 => self.longitude = longitude,
-            _ => {}
+        if longitude >= -180.0 && longitude <= 180.0 {
+            self.longitude = longitude;
         }
-
+        self.location_set = true;
         self
     }
 
@@ -182,9 +181,12 @@ impl MediaMuxer {
         }
 
         unsafe {
-            // Set all the parameters
-            AMediaMuxer_setLocation(self.inner, self.latitude, self.longitude).result()?;
-            AMediaMuxer_setOrientationHint(self.inner, self.orientation_hint).result()?;
+            if self.location_set {
+                AMediaMuxer_setLocation(self.inner, self.latitude, self.longitude).result()?;
+            }
+            if self.orientation_hint != 0 {
+                AMediaMuxer_setOrientationHint(self.inner, self.orientation_hint).result()?;
+            }
 
             // Start the muxer
             AMediaMuxer_start(self.inner).result()?;
@@ -199,14 +201,10 @@ impl MediaMuxer {
     ///
     /// Once the muxer stops, it cannot be restarted, and therefore this function takes ownership
     /// of the muxer instance
-    pub fn stop(mut self) -> Result<(), MediaStatus> {
+    pub fn stop(self) -> Result<(), MediaStatus> {
         if let MuxerState::Uninitialized = self.state {
-            // Don't return unnecessary errors. Let them do rubbish :)
             return Ok(());
         }
-
-        // In case our user is a crazy person, and managed to bypass the Rust system
-        self.state = MuxerState::Uninitialized;
 
         unsafe { AMediaMuxer_stop(self.inner) }.result().map(|_| ())
     }

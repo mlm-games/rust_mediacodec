@@ -5,8 +5,8 @@ pub enum Frame<'a> {
     Video(VideoFrame<'a>),
 }
 
-pub const ENCODING_PCM_16BIT: usize = 2;
-pub const ENCODING_PCM_FLOAT: usize = 4;
+pub const ENCODING_PCM_16BIT: i32 = 2;
+pub const ENCODING_PCM_FLOAT: i32 = 4;
 
 /// Represents an audio sample format, and contains the samples buffer
 #[derive(Debug)]
@@ -69,7 +69,7 @@ impl<'a> AudioFrame<'a> {
 
 #[derive(Debug)]
 pub enum VideoFrame<'a> {
-    /// Represens a hardware video frame (stored in a NativeWindow, so it cannot be accessed)
+    /// Represents a hardware video frame (stored in a NativeWindow, so it cannot be accessed)
     ///
     /// Can't do much with this, it's just a marker. The underlying `CodecOutputBuffer` will take care of it
     Hardware,

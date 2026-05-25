@@ -138,18 +138,21 @@ impl NativeWindow {
         Self { inner }
     }
 
-    pub fn from_surface(surface: JObject<'_>) -> Self {
+    pub fn from_surface(surface: JObject<'_>) -> Option<Self> {
         let ctx = ndk_context::android_context();
         let vm = unsafe { jni::vm::JavaVM::from_raw(ctx.vm().cast()) };
-        let raw_env = vm
+        let ptr = vm
             .attach_current_thread(|env| unsafe {
                 Ok::<*mut ANativeWindow, jni::errors::Error>(ANativeWindow_fromSurface(
                     env.get_raw(),
                     surface.as_raw(),
                 ))
             })
-            .expect("failed to attach current thread to JVM");
-        unsafe { Self::from_raw(raw_env) }
+            .ok()?;
+        if ptr.is_null() {
+            return None;
+        }
+        Some(Self { inner: ptr })
     }
 
     #[cfg(feature = "api26")]

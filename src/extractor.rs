@@ -4,10 +4,11 @@ use log::{debug, info};
 
 use crate::{AMediaFormat, CodecInputBuffer, MediaFormat, MediaStatus};
 
+#[repr(i32)]
 pub enum SeekMode {
-    SeekClosestSync,
-    SeekNextSync,
-    SeekPreviousSync,
+    SeekClosestSync = 0,
+    SeekNextSync = 1,
+    SeekPreviousSync = 2,
 }
 
 #[repr(C)]
@@ -125,20 +126,22 @@ impl MediaExtractor {
     }
 
     /// Read a packet into `buffer` and advance the extractor
-    /// Returns true if there's still more data to read
-    pub fn read_next(&mut self, buffer: &mut CodecInputBuffer) -> bool {
+    /// Returns `Ok(true)` if data was read, `Ok(false)` if no more data, or `Err` on error
+    pub fn read_next(&mut self, buffer: &mut CodecInputBuffer) -> Result<bool, MediaStatus> {
         unsafe {
             if !self.has_next {
-                return false;
+                return Ok(false);
             }
             let count = AMediaExtractor_readSampleData(self.inner, buffer.buffer, buffer.size);
             if count > 0 {
                 buffer.set_write_size(count as usize);
                 buffer.set_time(self.sample_time() as u64);
+            } else if count < 0 {
+                return Err(MediaStatus::try_from(count).unwrap_or(MediaStatus::ErrorUnknown));
             }
             buffer.set_flags(self.sample_flags());
             self.has_next = AMediaExtractor_advance(self.inner);
-            self.has_next
+            Ok(self.has_next)
         }
     }
 

@@ -1,34 +1,34 @@
-#[repr(C)]
+#[repr(i32)]
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum MediaStatus {
     Ok = 0,
     ErrorInsufficientResource = 1100,
     ErrorReclaimed = 1101,
     ErrorUnknown = -10000,
-    ErrorMalformed = MediaStatus::ErrorUnknown as isize - 1,
-    ErrorUnsupported = MediaStatus::ErrorUnknown as isize - 2,
-    ErrorInvalidObject = MediaStatus::ErrorUnknown as isize - 3,
-    ErrorInvalidParameter = MediaStatus::ErrorUnknown as isize - 4,
-    ErrorInvalidOperation = MediaStatus::ErrorUnknown as isize - 5,
-    ErrorEndOfStream = MediaStatus::ErrorUnknown as isize - 6,
-    ErrorIO = MediaStatus::ErrorUnknown as isize - 7,
-    ErrorWouldBlock = MediaStatus::ErrorUnknown as isize - 8,
+    ErrorMalformed = -10001,
+    ErrorUnsupported = -10002,
+    ErrorInvalidObject = -10003,
+    ErrorInvalidParameter = -10004,
+    ErrorInvalidOperation = -10005,
+    ErrorEndOfStream = -10006,
+    ErrorIO = -10007,
+    ErrorWouldBlock = -10008,
     DRMErrorBase = -20000,
-    DRMNotProvisioned = MediaStatus::DRMErrorBase as isize - 1,
-    DRMResourceBusy = MediaStatus::DRMErrorBase as isize - 2,
-    DRMDeviceRevoked = MediaStatus::DRMErrorBase as isize - 3,
-    DRMShortBuffer = MediaStatus::DRMErrorBase as isize - 4,
-    DRMSessionNotOpened = MediaStatus::DRMErrorBase as isize - 5,
-    DRMTamperDetected = MediaStatus::DRMErrorBase as isize - 6,
-    DRMVerifyFailed = MediaStatus::DRMErrorBase as isize - 7,
-    DRMNeedKey = MediaStatus::DRMErrorBase as isize - 8,
-    DRMLicenseExpired = MediaStatus::DRMErrorBase as isize - 9,
+    DRMNotProvisioned = -20001,
+    DRMResourceBusy = -20002,
+    DRMDeviceRevoked = -20003,
+    DRMShortBuffer = -20004,
+    DRMSessionNotOpened = -20005,
+    DRMTamperDetected = -20006,
+    DRMVerifyFailed = -20007,
+    DRMNeedKey = -20008,
+    DRMLicenseExpired = -20009,
     ImgReaderErrorBase = -30000,
-    ImgReaderNoBufferAvailable = MediaStatus::ImgReaderErrorBase as isize - 1,
-    ImgReaderMaxImagesAcquired = MediaStatus::ImgReaderErrorBase as isize - 2,
-    ImgReaderCannotLockImage = MediaStatus::ImgReaderErrorBase as isize - 3,
-    ImgReaderCannotUnlockImage = MediaStatus::ImgReaderErrorBase as isize - 4,
-    ImgReaderImageNotLocked = MediaStatus::ImgReaderErrorBase as isize - 5,
+    ImgReaderNoBufferAvailable = -30001,
+    ImgReaderMaxImagesAcquired = -30002,
+    ImgReaderCannotLockImage = -30003,
+    ImgReaderCannotUnlockImage = -30004,
+    ImgReaderImageNotLocked = -30005,
 }
 
 impl MediaStatus {
@@ -82,8 +82,8 @@ impl MediaStatus {
         }
     }
 
-    fn is_ok(&self) -> bool {
-        !Self::all().iter().skip(1).any(|&x| *self == x)
+    pub fn is_ok(&self) -> bool {
+        *self == Self::Ok
     }
 }
 
