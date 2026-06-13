@@ -35,11 +35,6 @@ log = "0.4"
 android_logger = "0.15"
 jni = "0.22"
 ndk-context = "0.1"
-# samplerate = "0.2.4"
-# image = "0.23.14"
-# palette = "0.6.0"
-# qrcode-generator = "4.1.2"
-# resize = "0.7.2"
 
 [features]
 api24 = []

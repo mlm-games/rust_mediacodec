@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 /// Represents a codec frame (either audio or video)
 #[derive(Debug)]
 pub enum Frame<'a> {
@@ -11,8 +13,8 @@ pub const ENCODING_PCM_FLOAT: i32 = 4;
 /// Represents an audio sample format, and contains the samples buffer
 #[derive(Debug)]
 pub enum SampleFormat<'a> {
-    S16(&'a [i16]),
-    F32(&'a [f32]),
+    S16(Cow<'a, [i16]>),
+    F32(Cow<'a, [f32]>),
 }
 
 impl SampleFormat<'_> {
@@ -57,7 +59,7 @@ impl<'a> AudioFrame<'a> {
     }
 
     /// Returns the sample format for this frame
-    pub fn format(&self) -> &SampleFormat {
+    pub fn format(&self) -> &SampleFormat<'_> {
         &self.format
     }
 

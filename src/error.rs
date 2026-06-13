@@ -1,5 +1,5 @@
 #[repr(i32)]
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum MediaStatus {
     Ok = 0,
     ErrorInsufficientResource = 1100,

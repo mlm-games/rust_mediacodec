@@ -1,3 +1,4 @@
+#![cfg(target_os = "android")]
 //! Rust bindings to the MediaCodec APIs in the Android NDK.
 //!
 //! # Examples

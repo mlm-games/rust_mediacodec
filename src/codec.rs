@@ -1,14 +1,16 @@
 use log::{debug, warn};
 
 use crate::{
-    AMediaCrypto, AMediaFormat, ANativeWindow, AudioFrame, Frame, MediaFormat, MediaStatus,
-    NativeWindow, SampleFormat, VideoFrame, ENCODING_PCM_16BIT, ENCODING_PCM_FLOAT,
+    AMediaCrypto, AMediaFormat, ANativeWindow, AudioFrame, ENCODING_PCM_16BIT, ENCODING_PCM_FLOAT,
+    Frame, MediaFormat, MediaStatus, NativeWindow, SampleFormat, VideoFrame,
 };
 use std::{
-    ffi::{c_void, CString},
+    borrow::Cow,
+    ffi::{CString, c_void},
     marker::PhantomData,
     os::raw::c_char,
-    ptr::{null_mut, slice_from_raw_parts},
+    ptr::null_mut,
+    slice,
 };
 
 #[repr(C)]
@@ -18,6 +20,14 @@ pub struct BufferInfo {
     pub size: i32,
     pub presentation_time_us: i64,
     pub flags: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DequeueOutputError {
+    TryAgainLater,
+    OutputFormatChanged,
+    OutputBuffersChanged,
+    CodecError(MediaStatus),
 }
 
 #[repr(C)]
@@ -66,7 +76,7 @@ impl TryFrom<BufferFlag> for i32 {
 
 impl BufferFlag {
     pub fn is_contained_in(&self, flag: i32) -> bool {
-        return flag & (*self as i32) > 0;
+        flag & (*self as i32) > 0
     }
 
     pub fn add_to_flag(&self, flag: &mut i32) {
@@ -104,7 +114,7 @@ impl TryFrom<InfoFlag> for i32 {
 
 impl InfoFlag {
     pub fn is_contained_in(&self, flag: i32) -> bool {
-        return flag & (*self as i32) > 0;
+        flag & (*self as i32) > 0
     }
 
     pub fn add_to_flag(&self, flag: &mut i32) {
@@ -499,14 +509,14 @@ unsafe extern "C" {
 /// This buffer should be filled with input data depending on whether the codec is an encoder or decoder
 #[derive(Debug)]
 pub struct CodecInputBuffer<'a> {
-    pub(crate) _marker: PhantomData<&'a (*mut u8, core::marker::PhantomPinned)>,
-    pub(crate) buffer: *mut u8,
-    pub(crate) size: usize,
-    pub(crate) write_size: usize,
+    _marker: PhantomData<&'a (*mut u8, core::marker::PhantomPinned)>,
+    buffer: *mut u8,
+    size: usize,
+    write_size: usize,
     index: usize,
     codec: *mut AMediaCodec,
-    pub(crate) time: u64,
-    pub(crate) flags: u32,
+    time: u64,
+    flags: u32,
 }
 
 impl CodecInputBuffer<'_> {
@@ -548,8 +558,17 @@ impl CodecInputBuffer<'_> {
     ///
     /// The reason for this is that I find data copying primitives provided by Rust to be confusing and not performant,
     /// so I would recommend you just use the `copy_nonoverlapping` function to copy data to this pointer
+    #[must_use]
     pub fn buffer(&self) -> (*mut u8, usize) {
         (self.buffer, self.size)
+    }
+
+    pub(crate) fn raw_buffer(&self) -> *mut u8 {
+        self.buffer
+    }
+
+    pub(crate) fn raw_size(&self) -> usize {
+        self.size
     }
 
     /// Set the presentation time of this buffer
@@ -667,17 +686,12 @@ impl CodecOutputBuffer<'_> {
             return None;
         }
 
-        unsafe {
-            Some(&*slice_from_raw_parts(
-                self.buffer.add(offset) as *const u8,
-                size,
-            ))
-        }
+        Some(unsafe { slice::from_raw_parts(self.buffer.add(offset), size) })
     }
 
     /// Returns the frame contained in this buffer.
     /// Can either be an audio frame or a video frame
-    pub fn frame(&self) -> Option<Frame> {
+    pub fn frame(&self) -> Option<Frame<'_>> {
         // Determine whether this is an audio or video frame.
         // We can use the mime type to do this
         let mime = self.format.get_string("mime")?;
@@ -707,59 +721,74 @@ impl CodecOutputBuffer<'_> {
             match encoding {
                 ENCODING_PCM_16BIT => {
                     let slice = self.buffer_slice()?;
-                    let len = slice.len() / std::mem::size_of::<i16>();
+                    let byte_len = slice.len();
+                    let sample_count = byte_len / std::mem::size_of::<i16>();
 
-                    // Make sure this didn't yield a remainder
-                    if slice.len() % std::mem::size_of::<i16>() != 0 {
-                        warn!("Potentially wrong results ahead!");
+                    if sample_count == 0 {
+                        return None;
                     }
 
-                    // Transmute as an i16 slice
-                    let buffer = unsafe {
-                        let buffer = std::mem::transmute::<*const u8, *const i16>(slice.as_ptr());
-                        let raw = std::ptr::slice_from_raw_parts(buffer, len);
+                    let cow: Cow<'_, [i16]> =
+                        if slice.as_ptr() as usize % std::mem::align_of::<i16>() == 0 {
+                            Cow::Borrowed(unsafe {
+                                slice::from_raw_parts(slice.as_ptr() as *const i16, sample_count)
+                            })
+                        } else {
+                            let mut aligned = vec![0i16; sample_count];
+                            unsafe {
+                                std::ptr::copy_nonoverlapping(
+                                    slice.as_ptr() as *const i16,
+                                    aligned.as_mut_ptr(),
+                                    sample_count,
+                                );
+                            }
+                            Cow::Owned(aligned)
+                        };
 
-                        &*raw
-                    };
-
-                    return Some(Frame::Audio(AudioFrame::new(
-                        SampleFormat::S16(buffer),
+                    Some(Frame::Audio(AudioFrame::new(
+                        SampleFormat::S16(cow),
                         channels as u32,
-                    )));
+                    )))
                 }
                 ENCODING_PCM_FLOAT => {
                     let slice = self.buffer_slice()?;
-                    let len = slice.len() / std::mem::size_of::<f32>();
+                    let byte_len = slice.len();
+                    let sample_count = byte_len / std::mem::size_of::<f32>();
 
-                    // Make sure this didn't yield a remainder
-                    if slice.len() % std::mem::size_of::<f32>() != 0 {
-                        warn!("Potentially wrong results ahead!");
+                    if sample_count == 0 {
+                        return None;
                     }
 
-                    // Transmute as an f32 slice
-                    let buffer = unsafe {
-                        let buffer = std::mem::transmute::<*const u8, *const f32>(slice.as_ptr());
-                        let raw = std::ptr::slice_from_raw_parts(buffer, len);
+                    let cow: Cow<'_, [f32]> =
+                        if slice.as_ptr() as usize % std::mem::align_of::<f32>() == 0 {
+                            Cow::Borrowed(unsafe {
+                                slice::from_raw_parts(slice.as_ptr() as *const f32, sample_count)
+                            })
+                        } else {
+                            let mut aligned = vec![0f32; sample_count];
+                            unsafe {
+                                std::ptr::copy_nonoverlapping(
+                                    slice.as_ptr() as *const f32,
+                                    aligned.as_mut_ptr(),
+                                    sample_count,
+                                );
+                            }
+                            Cow::Owned(aligned)
+                        };
 
-                        &*raw
-                    };
-
-                    return Some(Frame::Audio(AudioFrame::new(
-                        SampleFormat::F32(buffer),
+                    Some(Frame::Audio(AudioFrame::new(
+                        SampleFormat::F32(cow),
                         channels as u32,
-                    )));
+                    )))
                 }
-                _ => {
-                    // We only care about PCM-16 and Float types
-                    return None;
-                }
+                _ => None,
             }
         } else {
             // We have a video frame! Do justice to it
 
             // We have a surface buffer, so return a video frame with surface buffer for it
             if !self.using_buffers {
-                return Some(Frame::Video(VideoFrame::Hardware));
+                Some(Frame::Video(VideoFrame::Hardware))
             } else {
                 unimplemented!();
             }
@@ -771,7 +800,6 @@ impl CodecOutputBuffer<'_> {
     pub fn set_render(&mut self, render: bool) {
         self.render = render;
     }
-
 }
 
 impl Drop for CodecOutputBuffer<'_> {
@@ -783,7 +811,7 @@ impl Drop for CodecOutputBuffer<'_> {
 }
 
 unsafe impl Send for CodecOutputBuffer<'_> {}
-unsafe impl Sync for CodecOutputBuffer<'_> {}
+unsafe impl Sync for CodecOutputBuffer<'_> {} // Not sure abt thhis one as it isn't documented as such
 
 /// The MediaCodec structure itself.
 ///
@@ -848,6 +876,7 @@ impl<'a> MediaCodec<'a> {
     }
 
     /// Initializes the codec with the parameters. This must be called before you can start the codec
+    #[must_use]
     pub fn init(
         &mut self,
         format: &MediaFormat,
@@ -855,17 +884,11 @@ impl<'a> MediaCodec<'a> {
         flags: u32,
     ) -> Result<(), MediaStatus> {
         unsafe {
-            // configure
+            // Keep the NativeWindow alive until after AMediaCodec_configure
+            let surface_ptr = surface.as_ref().map_or(null_mut(), |s| s.inner);
+            self.using_buffers = surface.is_none();
 
-            let surface = if surface.is_some() {
-                self.using_buffers = false;
-                surface.unwrap().inner
-            } else {
-                self.using_buffers = true;
-                null_mut()
-            };
-
-            AMediaCodec_configure(self.inner, format.inner, surface, null_mut(), flags)
+            AMediaCodec_configure(self.inner, format.inner, surface_ptr, null_mut(), flags)
                 .result()
                 .map(|_value| ())
         }
@@ -874,6 +897,7 @@ impl<'a> MediaCodec<'a> {
     /// Starts the codec for processing.
     ///
     /// This must be called only after the codec has been initialized
+    #[must_use]
     pub fn start(&mut self) -> Result<(), MediaStatus> {
         unsafe { AMediaCodec_start(self.inner).result().map(|_value| ()) }
     }
@@ -881,6 +905,7 @@ impl<'a> MediaCodec<'a> {
     /// **WARNING**
     ///
     /// Make sure you have released all pending buffers before calling this function
+    #[must_use]
     pub fn stop(&mut self) -> Result<(), MediaStatus> {
         unsafe { AMediaCodec_stop(self.inner).result().map(|_| ()) }
     }
@@ -888,11 +913,13 @@ impl<'a> MediaCodec<'a> {
     /// **WARNING**
     ///
     /// Make sure you have released all pending buffers before calling this function
+    #[must_use]
     pub fn flush(&mut self) -> Result<(), MediaStatus> {
         unsafe { AMediaCodec_flush(self.inner).result().map(|_| ()) }
     }
 
     /// Returns the output format of this codec (if we can find one)
+    #[must_use]
     pub fn output_format(&self) -> Option<MediaFormat> {
         unsafe {
             let format = AMediaCodec_getOutputFormat(self.inner);
@@ -918,7 +945,8 @@ impl<'a> MediaCodec<'a> {
     }
 
     /// Get an input buffer from mediacodec
-    pub fn dequeue_input(&mut self) -> Result<CodecInputBuffer, MediaStatus> {
+    #[must_use]
+    pub fn dequeue_input(&mut self) -> Result<CodecInputBuffer<'_>, MediaStatus> {
         unsafe {
             // 100us wait time is not too much, right?
             let index = AMediaCodec_dequeueInputBuffer(self.inner, 100);
@@ -936,45 +964,47 @@ impl<'a> MediaCodec<'a> {
                     return Err(MediaStatus::ErrorUnknown);
                 }
 
-                let buf = CodecInputBuffer::new(self.inner, index as usize, buffer, out_size);
-
-                return Ok(buf);
+                Ok(CodecInputBuffer::new(
+                    self.inner,
+                    index as usize,
+                    buffer,
+                    out_size,
+                ))
+            } else {
+                Err(MediaStatus::try_from(index).unwrap_or(MediaStatus::ErrorUnknown))
             }
-
-            Err(MediaStatus::try_from(index).unwrap_or(MediaStatus::ErrorUnknown))
         }
     }
 
     /// Get an output buffer from mediacodec
-    pub fn dequeue_output(&mut self) -> Result<CodecOutputBuffer, MediaStatus> {
+    #[must_use]
+    pub fn dequeue_output(&mut self) -> Result<CodecOutputBuffer<'_>, DequeueOutputError> {
         unsafe {
             let mut info = BufferInfo::default();
             let index = AMediaCodec_dequeueOutputBuffer(self.inner, &mut info, 100);
 
             match index {
-                // TryAgainLater: no output available yet
-                // OutputFormatChanged: format changed; next output_format() returns new format
-                // OutputBuffersChanged: buffers reallocated
-                -1 | -2 | -3 => Err(MediaStatus::ErrorWouldBlock),
+                -1 => Err(DequeueOutputError::TryAgainLater),
+                -2 => Err(DequeueOutputError::OutputFormatChanged),
+                -3 => Err(DequeueOutputError::OutputBuffersChanged),
                 idx if idx >= 0 => {
                     let mut out_size = 0;
                     let mut buffer = null_mut();
                     if self.using_buffers {
-                        buffer = AMediaCodec_getOutputBuffer(
-                            self.inner,
-                            idx as usize,
-                            &mut out_size,
-                        );
+                        buffer =
+                            AMediaCodec_getOutputBuffer(self.inner, idx as usize, &mut out_size);
 
                         if buffer.is_null() {
                             AMediaCodec_releaseOutputBuffer(self.inner, idx as usize, false);
-                            return Err(MediaStatus::ErrorUnknown);
+                            return Err(DequeueOutputError::CodecError(MediaStatus::ErrorUnknown));
                         }
                     }
 
-                    let format = self.output_format().ok_or(MediaStatus::ErrorUnknown)?;
+                    let format = self
+                        .output_format()
+                        .ok_or(DequeueOutputError::CodecError(MediaStatus::ErrorUnknown))?;
 
-                    let codec_buffer = CodecOutputBuffer::new(
+                    Ok(CodecOutputBuffer::new(
                         self.inner,
                         info,
                         idx as usize,
@@ -982,11 +1012,11 @@ impl<'a> MediaCodec<'a> {
                         buffer,
                         out_size,
                         format,
-                    );
-
-                    Ok(codec_buffer)
+                    ))
                 }
-                _ => Err(MediaStatus::ErrorUnknown),
+                _ => Err(DequeueOutputError::CodecError(
+                    MediaStatus::try_from(index).unwrap_or(MediaStatus::ErrorUnknown),
+                )),
             }
         }
     }
@@ -994,8 +1024,10 @@ impl<'a> MediaCodec<'a> {
 
 impl<'a> Drop for MediaCodec<'a> {
     fn drop(&mut self) {
-        unsafe {
-            AMediaCodec_delete(self.inner);
+        if !self.inner.is_null() {
+            unsafe {
+                AMediaCodec_delete(self.inner);
+            }
         }
     }
 }

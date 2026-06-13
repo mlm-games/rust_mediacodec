@@ -22,32 +22,32 @@ pub enum OutputFormat {
 #[link(name = "mediandk")]
 unsafe extern "C" {
     /// Since: API 21
-    pub fn AMediaMuxer_new(fd: i32, format: OutputFormat) -> *mut AMediaMuxer;
+    fn AMediaMuxer_new(fd: i32, format: OutputFormat) -> *mut AMediaMuxer;
 
     /// Since: API 21
-    pub fn AMediaMuxer_delete(muxer: *mut AMediaMuxer) -> MediaStatus;
+    fn AMediaMuxer_delete(muxer: *mut AMediaMuxer) -> MediaStatus;
 
     /// Since: API 21
-    pub fn AMediaMuxer_setLocation(
+    fn AMediaMuxer_setLocation(
         muxer: *mut AMediaMuxer,
         latitude: f32,
         longitude: f32,
     ) -> MediaStatus;
 
     /// Since: API 21
-    pub fn AMediaMuxer_setOrientationHint(muxer: *mut AMediaMuxer, degrees: i32) -> MediaStatus;
+    fn AMediaMuxer_setOrientationHint(muxer: *mut AMediaMuxer, degrees: i32) -> MediaStatus;
 
     /// Since: API 21
-    pub fn AMediaMuxer_addTrack(muxer: *mut AMediaMuxer, format: *const AMediaFormat) -> isize;
+    fn AMediaMuxer_addTrack(muxer: *mut AMediaMuxer, format: *const AMediaFormat) -> isize;
 
     /// Since: API 21
-    pub fn AMediaMuxer_start(muxer: *mut AMediaMuxer) -> MediaStatus;
+    fn AMediaMuxer_start(muxer: *mut AMediaMuxer) -> MediaStatus;
 
     /// Since: API 21
-    pub fn AMediaMuxer_stop(muxer: *mut AMediaMuxer) -> MediaStatus;
+    fn AMediaMuxer_stop(muxer: *mut AMediaMuxer) -> MediaStatus;
 
     /// Since: API 21
-    pub fn AMediaMuxer_writeSampleData(
+    fn AMediaMuxer_writeSampleData(
         muxer: *mut AMediaMuxer,
         track_index: usize,
         data: *const u8,
@@ -85,6 +85,7 @@ impl MediaMuxer {
     /// `fd` is the file descriptor to write data to
     ///
     /// `output_format` is the container format for the output
+    #[must_use]
     pub fn new(fd: i32, output_format: OutputFormat) -> Option<Self> {
         let value = unsafe { AMediaMuxer_new(fd, output_format) };
 
@@ -144,6 +145,7 @@ impl MediaMuxer {
     /// Adds a track with the specified format.
     ///
     /// Returns the index of the new track or a `MediaStatus` in case of failure.
+    #[must_use]
     pub fn add_track(&mut self, format: MediaFormat) -> Result<isize, MediaStatus> {
         let result = unsafe { AMediaMuxer_addTrack(self.inner, format.inner) };
 
@@ -170,6 +172,7 @@ impl MediaMuxer {
     }
 
     /// Start the muxer. Should be called only when tracks
+    #[must_use]
     pub fn start(&mut self) -> Result<(), MediaStatus> {
         if let MuxerState::Started = self.state {
             return Ok(());
@@ -201,6 +204,7 @@ impl MediaMuxer {
     ///
     /// Once the muxer stops, it cannot be restarted, and therefore this function takes ownership
     /// of the muxer instance
+    #[must_use]
     pub fn stop(self) -> Result<(), MediaStatus> {
         if let MuxerState::Uninitialized = self.state {
             return Ok(());
@@ -214,6 +218,7 @@ impl MediaMuxer {
     /// The application needs to make sure that the samples are written into the right tracks.
     ///
     /// Also, it needs to make sure the samples for each track are written in chronological order (e.g. in the order they are provided by the encoder)
+    #[must_use]
     pub fn write_sample_data(
         &mut self,
         track_index: usize,
@@ -231,13 +236,14 @@ impl MediaMuxer {
 }
 
 unsafe impl Send for MediaMuxer {}
-
 unsafe impl Sync for MediaMuxer {}
 
 impl Drop for MediaMuxer {
     fn drop(&mut self) {
-        unsafe {
-            AMediaMuxer_delete(self.inner);
+        if !self.inner.is_null() {
+            unsafe {
+                AMediaMuxer_delete(self.inner);
+            }
         }
     }
 }

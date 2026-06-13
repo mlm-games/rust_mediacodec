@@ -1,6 +1,6 @@
 use std::{ffi::CString, os::raw::c_char};
 
-use log::{debug, info};
+use log::debug;
 
 use crate::{AMediaFormat, CodecInputBuffer, MediaFormat, MediaStatus};
 
@@ -132,7 +132,8 @@ impl MediaExtractor {
             if !self.has_next {
                 return Ok(false);
             }
-            let count = AMediaExtractor_readSampleData(self.inner, buffer.buffer, buffer.size);
+            let count =
+                AMediaExtractor_readSampleData(self.inner, buffer.raw_buffer(), buffer.raw_size());
             if count > 0 {
                 buffer.set_write_size(count as usize);
                 buffer.set_time(self.sample_time() as u64);
@@ -141,7 +142,7 @@ impl MediaExtractor {
             }
             buffer.set_flags(self.sample_flags());
             self.has_next = AMediaExtractor_advance(self.inner);
-            Ok(self.has_next)
+            Ok(count > 0)
         }
     }
 
@@ -159,12 +160,12 @@ impl MediaExtractor {
 
 impl Drop for MediaExtractor {
     fn drop(&mut self) {
-        unsafe {
-            info!("Deleting the extractor...");
-            AMediaExtractor_delete(self.inner);
+        if !self.inner.is_null() {
+            unsafe {
+                AMediaExtractor_delete(self.inner);
+            }
         }
     }
 }
 
 unsafe impl Send for MediaExtractor {}
-unsafe impl Sync for MediaExtractor {}

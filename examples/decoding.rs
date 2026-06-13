@@ -1,5 +1,5 @@
 use log::debug;
-use mediacodec::{Frame, MediaCodec, MediaExtractor, SampleFormat, VideoFrame};
+use mediacodec::{DequeueOutputError, Frame, MediaCodec, MediaExtractor, SampleFormat, VideoFrame};
 
 #[unsafe(no_mangle)]
 extern "C" fn process() {
@@ -50,32 +50,34 @@ extern "C" fn process() {
             // And we don't have to do anything else
         }
 
-        // Check for output
-        let output_fmt = codec.output_format().unwrap();
-        while let Ok(mut buffer) = codec.dequeue_output() {
-            if let Some(ref frame) = buffer.frame() {
-                match frame {
-                    Frame::Audio(value) => match value.format() {
-                        SampleFormat::S16(_) => {
-                            // Do something with the audio frame
+        loop {
+            match codec.dequeue_output() {
+                Ok(mut buffer) => {
+                    if let Some(ref frame) = buffer.frame() {
+                        match frame {
+                            Frame::Audio(value) => match value.format() {
+                                SampleFormat::S16(_) => {}
+                                SampleFormat::F32(_) => {}
+                            },
+                            Frame::Video(value) => match value {
+                                VideoFrame::Hardware => {}
+                                VideoFrame::RawFrame(_) => {}
+                            },
                         }
-                        SampleFormat::F32(_) => {
-                            // Do something with the audio frame
-                        }
-                    },
-                    Frame::Video(value) => match value {
-                        VideoFrame::Hardware => {
-                            // Nothing TODO. The frame will be rendered
-                        }
-                        VideoFrame::RawFrame(_) => {
-                            // Read out the raw buffers or something
-                        }
-                    },
+                    }
+                    buffer.set_render(true);
+                }
+                Err(DequeueOutputError::TryAgainLater) => break,
+                Err(DequeueOutputError::OutputFormatChanged) => {
+                    debug!("Output format changed");
+                    continue;
+                }
+                Err(DequeueOutputError::OutputBuffersChanged) => continue,
+                Err(DequeueOutputError::CodecError(e)) => {
+                    debug!("Codec error: {e:?}");
+                    break;
                 }
             }
-
-            // Set the buffer to render when dropped. Only applicable to video codecs that have a hardware buffer (i.e, attached to a native window)
-            buffer.set_render(true);
         }
     }
 }

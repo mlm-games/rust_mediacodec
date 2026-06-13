@@ -1,11 +1,9 @@
 use std::{
-    ffi::{c_void, CStr, CString},
+    ffi::{CStr, CString, c_void},
     fmt,
     os::raw::c_char,
     ptr::null_mut,
 };
-
-use log::debug;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -20,11 +18,11 @@ unsafe extern "C" {
     fn AMediaFormat_delete(format: *mut AMediaFormat) -> isize;
     fn AMediaFormat_toString(format: *mut AMediaFormat) -> *const c_char;
     fn AMediaFormat_getInt32(format: *mut AMediaFormat, name: *const c_char, out: *mut i32)
-        -> bool;
+    -> bool;
     fn AMediaFormat_getInt64(format: *mut AMediaFormat, name: *const c_char, out: *mut i64)
-        -> bool;
+    -> bool;
     fn AMediaFormat_getFloat(format: *mut AMediaFormat, name: *const c_char, out: *mut f32)
-        -> bool;
+    -> bool;
     #[cfg(feature = "api28")]
     fn AMediaFormat_getDouble(
         format: *mut AMediaFormat,
@@ -94,12 +92,17 @@ pub struct MediaFormat {
     pub(crate) inner: *mut AMediaFormat,
 }
 
+fn cstr(s: &str) -> CString {
+    CString::new(s).expect("format key/value must not contain null bytes")
+}
+
 impl MediaFormat {
     /// Construct a MediaFormat from a raw pointer
     pub fn from_raw(inner: *mut AMediaFormat) -> Self {
         Self { inner }
     }
 
+    #[must_use]
     pub fn new() -> Option<Self> {
         unsafe {
             let inner = AMediaFormat_new();
@@ -110,79 +113,89 @@ impl MediaFormat {
         }
     }
 
+    #[must_use]
     pub fn set_i32(&mut self, name: &str, value: i32) -> bool {
-        let name = CString::new(name).unwrap();
+        let name = cstr(name);
         unsafe { AMediaFormat_setInt32(self.inner, name.as_ptr(), value) }
     }
 
+    #[must_use]
     pub fn get_i32(&self, name: &str) -> Option<i32> {
         unsafe {
             let mut v = 0i32;
-            let name = CString::new(name).unwrap();
+            let name = cstr(name);
             AMediaFormat_getInt32(self.inner, name.as_ptr(), &mut v).then_some(v)
         }
     }
 
+    #[must_use]
     pub fn set_i64(&mut self, name: &str, value: i64) -> bool {
-        let name = CString::new(name).unwrap();
+        let name = cstr(name);
         unsafe { AMediaFormat_setInt64(self.inner, name.as_ptr(), value) }
     }
 
+    #[must_use]
     pub fn get_i64(&self, name: &str) -> Option<i64> {
         unsafe {
             let mut v = 0i64;
-            let name = CString::new(name).unwrap();
+            let name = cstr(name);
             AMediaFormat_getInt64(self.inner, name.as_ptr(), &mut v).then_some(v)
         }
     }
 
+    #[must_use]
     pub fn set_f32(&mut self, name: &str, value: f32) -> bool {
-        let name = CString::new(name).unwrap();
+        let name = cstr(name);
         unsafe { AMediaFormat_setFloat(self.inner, name.as_ptr(), value) }
     }
 
+    #[must_use]
     pub fn get_f32(&self, name: &str) -> Option<f32> {
         unsafe {
             let mut v = 0f32;
-            let name = CString::new(name).unwrap();
+            let name = cstr(name);
             AMediaFormat_getFloat(self.inner, name.as_ptr(), &mut v).then_some(v)
         }
     }
 
-    /// Convenience function to check whether the mime type is audio
+    #[must_use]
     pub fn is_audio(&self) -> bool {
         self.get_string("mime").is_some_and(|m| m.contains("audio"))
     }
 
+    #[must_use]
     pub fn is_video(&self) -> bool {
         self.get_string("mime").is_some_and(|m| m.contains("video"))
     }
 
     #[cfg(feature = "api28")]
+    #[must_use]
     pub fn set_f64(&mut self, name: &str, value: f64) -> bool {
-        let name = CString::new(name).unwrap();
+        let name = cstr(name);
         unsafe { AMediaFormat_setDouble(self.inner, name.as_ptr(), value) }
     }
 
     #[cfg(feature = "api28")]
+    #[must_use]
     pub fn get_f64(&self, name: &str) -> Option<f64> {
         unsafe {
             let mut v = 0f64;
-            let name = CString::new(name).unwrap();
+            let name = cstr(name);
             AMediaFormat_getDouble(self.inner, name.as_ptr(), &mut v).then_some(v)
         }
     }
 
+    #[must_use]
     pub fn set_string(&mut self, name: &str, value: &str) -> bool {
-        let name = CString::new(name).unwrap();
-        let value = CString::new(value).unwrap();
+        let name = cstr(name);
+        let value = cstr(value);
         unsafe { AMediaFormat_setString(self.inner, name.as_ptr(), value.as_ptr()) }
     }
 
     pub fn get_string(&self, name: &str) -> Option<String> {
         unsafe {
             let mut data = null_mut();
-            let name = CString::new(name).unwrap();
+            let name = cstr(name);
             if AMediaFormat_getString(self.inner, name.as_ptr(), &mut data) {
                 Some(CStr::from_ptr(data).to_string_lossy().into_owned())
             } else {
@@ -215,8 +228,10 @@ impl fmt::Display for MediaFormat {
 
 impl Drop for MediaFormat {
     fn drop(&mut self) {
-        unsafe {
-            AMediaFormat_delete(self.inner);
+        if !self.inner.is_null() {
+            unsafe {
+                AMediaFormat_delete(self.inner);
+            }
         }
     }
 }
