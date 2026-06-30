@@ -192,6 +192,19 @@ impl MediaFormat {
         unsafe { AMediaFormat_setString(self.inner, name.as_ptr(), value.as_ptr()) }
     }
 
+    #[must_use]
+    pub fn set_buffer(&mut self, name: &str, value: &[u8]) -> bool {
+        let name = cstr(name);
+        unsafe {
+            AMediaFormat_setBuffer(
+                self.inner,
+                name.as_ptr(),
+                value.as_ptr() as *const c_void,
+                value.len(),
+            )
+        }
+    }
+
     pub fn get_string(&self, name: &str) -> Option<String> {
         unsafe {
             let mut data = null_mut();
