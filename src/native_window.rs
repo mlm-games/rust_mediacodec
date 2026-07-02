@@ -228,5 +228,4 @@ impl Drop for NativeWindow {
     }
 }
 
-unsafe impl Send for NativeWindow {}
-unsafe impl Sync for NativeWindow {}
+

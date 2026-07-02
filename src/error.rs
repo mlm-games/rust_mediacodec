@@ -85,19 +85,4 @@ impl MediaStatus {
     }
 }
 
-impl MediaStatus {
-    /// Convert a raw `isize` FFI return value (e.g. from `dequeueInputBuffer`) into `Result<isize, MediaStatus>`.
-    /// Non-negative values pass through as `Ok`; negative values are mapped to error.
-    pub fn make_result_isize(value: isize) -> Result<isize, MediaStatus> {
-        if value >= 0 {
-            Ok(value)
-        } else {
-            let status = Self::from_i32(value as i32);
-            if status.is_ok() {
-                Ok(value)
-            } else {
-                Err(status)
-            }
-        }
-    }
-}
+

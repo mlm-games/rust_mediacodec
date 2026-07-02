@@ -3,6 +3,7 @@ use std::{
     fmt,
     os::raw::c_char,
     ptr::null_mut,
+    rc::Rc,
 };
 
 use crate::MediaStatus;
@@ -86,12 +87,27 @@ unsafe extern "C" {
     #[cfg(feature = "api29")]
     fn AMediaFormat_clear(format: *mut AMediaFormat);
     #[cfg(feature = "api29")]
-    fn AMediaFormat_copy(to: *mut AMediaFormat, from: *mut AMediaFormat) -> isize;
+    fn AMediaFormat_copy(to: *mut AMediaFormat, from: *mut AMediaFormat) -> i32;
+}
+
+#[derive(Debug)]
+pub(crate) struct MediaFormatInner {
+    pub(crate) ptr: *mut AMediaFormat,
+}
+
+impl Drop for MediaFormatInner {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe {
+                AMediaFormat_delete(self.ptr);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct MediaFormat {
-    pub(crate) inner: *mut AMediaFormat,
+    pub(crate) inner: Rc<MediaFormatInner>,
 }
 
 fn cstr(s: &str) -> CString {
@@ -105,24 +121,28 @@ impl MediaFormat {
     /// `inner` must be a valid, non-null pointer to an `AMediaFormat` that this
     /// `MediaFormat` will own. The caller must ensure the pointer is valid for the
     /// lifetime of the returned `MediaFormat`.
-    pub unsafe fn from_raw(inner: *mut AMediaFormat) -> Self {
-        Self { inner }
+    pub unsafe fn from_raw(ptr: *mut AMediaFormat) -> Self {
+        Self {
+            inner: Rc::new(MediaFormatInner { ptr }),
+        }
     }
 
     pub fn new() -> Result<Self, MediaStatus> {
         unsafe {
-            let inner = AMediaFormat_new();
-            if inner.is_null() {
+            let ptr = AMediaFormat_new();
+            if ptr.is_null() {
                 return Err(MediaStatus::ErrorUnknown);
             }
-            Ok(Self { inner })
+            Ok(Self {
+                inner: Rc::new(MediaFormatInner { ptr }),
+            })
         }
     }
 
     #[must_use]
     pub fn set_i32(&mut self, name: &str, value: i32) -> bool {
         let name = cstr(name);
-        unsafe { AMediaFormat_setInt32(self.inner, name.as_ptr(), value) }
+        unsafe { AMediaFormat_setInt32(self.inner.ptr, name.as_ptr(), value) }
     }
 
     #[must_use]
@@ -130,14 +150,14 @@ impl MediaFormat {
         unsafe {
             let mut v = 0i32;
             let name = cstr(name);
-            AMediaFormat_getInt32(self.inner, name.as_ptr(), &mut v).then_some(v)
+            AMediaFormat_getInt32(self.inner.ptr, name.as_ptr(), &mut v).then_some(v)
         }
     }
 
     #[must_use]
     pub fn set_i64(&mut self, name: &str, value: i64) -> bool {
         let name = cstr(name);
-        unsafe { AMediaFormat_setInt64(self.inner, name.as_ptr(), value) }
+        unsafe { AMediaFormat_setInt64(self.inner.ptr, name.as_ptr(), value) }
     }
 
     #[must_use]
@@ -145,14 +165,14 @@ impl MediaFormat {
         unsafe {
             let mut v = 0i64;
             let name = cstr(name);
-            AMediaFormat_getInt64(self.inner, name.as_ptr(), &mut v).then_some(v)
+            AMediaFormat_getInt64(self.inner.ptr, name.as_ptr(), &mut v).then_some(v)
         }
     }
 
     #[must_use]
     pub fn set_f32(&mut self, name: &str, value: f32) -> bool {
         let name = cstr(name);
-        unsafe { AMediaFormat_setFloat(self.inner, name.as_ptr(), value) }
+        unsafe { AMediaFormat_setFloat(self.inner.ptr, name.as_ptr(), value) }
     }
 
     #[must_use]
@@ -160,25 +180,25 @@ impl MediaFormat {
         unsafe {
             let mut v = 0f32;
             let name = cstr(name);
-            AMediaFormat_getFloat(self.inner, name.as_ptr(), &mut v).then_some(v)
+            AMediaFormat_getFloat(self.inner.ptr, name.as_ptr(), &mut v).then_some(v)
         }
     }
 
     #[must_use]
     pub fn is_audio(&self) -> bool {
-        self.get_string("mime").is_some_and(|m| m.contains("audio"))
+        self.get_string("mime").is_some_and(|m| m.starts_with("audio/"))
     }
 
     #[must_use]
     pub fn is_video(&self) -> bool {
-        self.get_string("mime").is_some_and(|m| m.contains("video"))
+        self.get_string("mime").is_some_and(|m| m.starts_with("video/"))
     }
 
     #[cfg(feature = "api28")]
     #[must_use]
     pub fn set_f64(&mut self, name: &str, value: f64) -> bool {
         let name = cstr(name);
-        unsafe { AMediaFormat_setDouble(self.inner, name.as_ptr(), value) }
+        unsafe { AMediaFormat_setDouble(self.inner.ptr, name.as_ptr(), value) }
     }
 
     #[cfg(feature = "api28")]
@@ -187,7 +207,7 @@ impl MediaFormat {
         unsafe {
             let mut v = 0f64;
             let name = cstr(name);
-            AMediaFormat_getDouble(self.inner, name.as_ptr(), &mut v).then_some(v)
+            AMediaFormat_getDouble(self.inner.ptr, name.as_ptr(), &mut v).then_some(v)
         }
     }
 
@@ -195,7 +215,7 @@ impl MediaFormat {
     pub fn set_string(&mut self, name: &str, value: &str) -> bool {
         let name = cstr(name);
         let value = cstr(value);
-        unsafe { AMediaFormat_setString(self.inner, name.as_ptr(), value.as_ptr()) }
+        unsafe { AMediaFormat_setString(self.inner.ptr, name.as_ptr(), value.as_ptr()) }
     }
 
     #[must_use]
@@ -203,7 +223,7 @@ impl MediaFormat {
         let name = cstr(name);
         unsafe {
             AMediaFormat_setBuffer(
-                self.inner,
+                self.inner.ptr,
                 name.as_ptr(),
                 value.as_ptr() as *const c_void,
                 value.len(),
@@ -215,7 +235,7 @@ impl MediaFormat {
         unsafe {
             let mut data = null_mut();
             let name = cstr(name);
-            if AMediaFormat_getString(self.inner, name.as_ptr(), &mut data) {
+            if AMediaFormat_getString(self.inner.ptr, name.as_ptr(), &mut data) {
                 Some(CStr::from_ptr(data).to_string_lossy().into_owned())
             } else {
                 None
@@ -227,7 +247,7 @@ impl MediaFormat {
     #[cfg(feature = "api29")]
     pub fn clear(&mut self) {
         unsafe {
-            AMediaFormat_clear(self.inner);
+            AMediaFormat_clear(self.inner.ptr);
         }
     }
 }
@@ -235,7 +255,7 @@ impl MediaFormat {
 impl fmt::Display for MediaFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
-            let value = AMediaFormat_toString(self.inner);
+            let value = AMediaFormat_toString(self.inner.ptr);
             if value.is_null() {
                 f.write_str("")
             } else {
@@ -245,14 +265,4 @@ impl fmt::Display for MediaFormat {
     }
 }
 
-impl Drop for MediaFormat {
-    fn drop(&mut self) {
-        if !self.inner.is_null() {
-            unsafe {
-                AMediaFormat_delete(self.inner);
-            }
-        }
-    }
-}
 
-unsafe impl Send for MediaFormat {}

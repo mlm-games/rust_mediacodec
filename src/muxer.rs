@@ -38,7 +38,7 @@ unsafe extern "C" {
     fn AMediaMuxer_setOrientationHint(muxer: *mut AMediaMuxer, degrees: i32) -> i32;
 
     /// Since: API 21
-    fn AMediaMuxer_addTrack(muxer: *mut AMediaMuxer, format: *const AMediaFormat) -> i32;
+    fn AMediaMuxer_addTrack(muxer: *mut AMediaMuxer, format: *const AMediaFormat) -> isize;
 
     /// Since: API 21
     fn AMediaMuxer_start(muxer: *mut AMediaMuxer) -> i32;
@@ -114,7 +114,11 @@ impl MediaMuxer {
     ///
     /// Longitude must be in the range (-180, 180)
     pub fn set_location(&mut self, latitude: f32, longitude: f32) -> Result<&mut Self, MediaStatus> {
-        if latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0 {
+        if !latitude.is_finite()
+            || !longitude.is_finite()
+            || !(-90.0..=90.0).contains(&latitude)
+            || !(-180.0..=180.0).contains(&longitude)
+        {
             return Err(MediaStatus::ErrorInvalidParameter);
         }
         self.latitude = latitude;
@@ -144,10 +148,12 @@ impl MediaMuxer {
     ///
     /// Returns the index of the new track or a `MediaStatus` in case of failure.
     pub fn add_track(&mut self, format: MediaFormat) -> Result<i32, MediaStatus> {
-        let result = unsafe { AMediaMuxer_addTrack(self.inner, format.inner) };
+        let result = unsafe { AMediaMuxer_addTrack(self.inner, format.inner.ptr) };
 
-        MediaStatus::make_result(result)?;
-        let track_index = self.track_formats.len() as i32;
+        if result < 0 {
+            return Err(MediaStatus::from_i32(result as i32));
+        }
+        let track_index = result as i32;
 
         // Keep the format, the user might need it
         self.track_formats.push(format);
@@ -210,7 +216,7 @@ impl MediaMuxer {
     /// of the muxer instance
     pub fn stop(self) -> Result<(), MediaStatus> {
         if let MuxerState::Uninitialized = self.state {
-            return Ok(());
+            return Err(MediaStatus::ErrorInvalidOperation);
         }
 
         unsafe { MediaStatus::make_result(AMediaMuxer_stop(self.inner)) }
@@ -252,9 +258,6 @@ impl MediaMuxer {
         }
     }
 }
-
-unsafe impl Send for MediaMuxer {}
-unsafe impl Sync for MediaMuxer {}
 
 impl Drop for MediaMuxer {
     fn drop(&mut self) {

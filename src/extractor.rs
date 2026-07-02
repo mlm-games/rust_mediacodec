@@ -58,23 +58,23 @@ pub struct MediaExtractor {
 }
 
 impl MediaExtractor {
-    fn new() -> Self {
-        Self {
-            inner: unsafe { AMediaExtractor_new() },
-            has_next: false,
+    fn new() -> Option<Self> {
+        let inner = unsafe { AMediaExtractor_new() };
+        if inner.is_null() {
+            return None;
         }
+        Some(Self {
+            inner,
+            has_next: false,
+        })
     }
 
     /// Creates a MediaExtractor with data source set to a specific URL
     pub fn from_url(path: &str) -> Result<Self, MediaStatus> {
         unsafe {
-            let mut me = Self::new();
-            let path_cs =
-                CString::new(path).map_err(|_| MediaStatus::ErrorInvalidParameter)?;
-            MediaStatus::make_result(AMediaExtractor_setDataSource(
-                me.inner,
-                path_cs.as_ptr(),
-            ))?;
+            let mut me = Self::new().ok_or(MediaStatus::ErrorUnknown)?;
+            let path_cs = CString::new(path).map_err(|_| MediaStatus::ErrorInvalidParameter)?;
+            MediaStatus::make_result(AMediaExtractor_setDataSource(me.inner, path_cs.as_ptr()))?;
             me.has_next = true;
             Ok(me)
         }
@@ -100,6 +100,10 @@ impl MediaExtractor {
                 return None;
             }
             let fmt = AMediaExtractor_getTrackFormat(self.inner, index);
+            if fmt.is_null() {
+                debug!("Null format for track index {index}");
+                return None;
+            }
             Some(MediaFormat::from_raw(fmt))
         }
     }
@@ -126,6 +130,10 @@ impl MediaExtractor {
 
     /// Read a packet into `buffer` and advance the extractor
     /// Returns `Ok(true)` if data was read, `Ok(false)` if no more data, or `Err` on error
+    ///
+    /// When the stream ends (`Ok(false)`), sets the `END_OF_STREAM` flag on the
+    /// buffer so the codec drains its last frames. The caller must still queue
+    /// the buffer (it will auto-queue on drop).
     pub fn read_next(&mut self, buffer: &mut CodecInputBuffer) -> Result<bool, MediaStatus> {
         unsafe {
             if !self.has_next {
@@ -141,14 +149,13 @@ impl MediaExtractor {
                     buffer.set_time(sample_time as u64);
                 }
 
-                // Extractor SAMPLE_FLAG_SYNC (1) = Codec BUFFER_FLAG_KEY_FRAME (1).
-                // Extractor SAMPLE_FLAG_ENCRYPTED (2) MUST NOT be forwarded as BUFFER_FLAG_CODEC_CONFIG (2).
-                // Only forward known codec-relevant flags.
+                // Only forwards the SYNC flag (1) from the extractor to the codec.
+                // Extractor SAMPLE_FLAG_ENCRYPTED (2) must NOT be forwarded as BUFFER_FLAG_CODEC_CONFIG (2).
+                // Extractor SAMPLE_FLAG_PARTIAL_FRAME (4) must NOT be forwarded as BUFFER_FLAG_END_OF_STREAM (4).
                 let extractor_flags = self.sample_flags();
-                let mut codec_flags = extractor_flags & 0xD; // Keep only flags 1 (KEY_FRAME), 4 (EOS...), 8 (PARTIAL_FRAME)
-                codec_flags &= !2; // Explicitly strip encrypted flag (not a codec buffer flag)
-                buffer.set_flags(codec_flags);
+                buffer.set_flags(extractor_flags & 1);
             } else if count < 0 {
+                self.has_next = false;
                 buffer.cancel();
                 return Err(MediaStatus::from_i32(count as i32));
             }
@@ -156,7 +163,10 @@ impl MediaExtractor {
             if count > 0 {
                 Ok(true)
             } else {
-                buffer.cancel();
+                // End of stream — signal EOS to the codec
+                buffer.set_flags(4); // BUFFER_FLAG_END_OF_STREAM
+                buffer.set_write_size(0);
+                // Don't cancel — the buffer will auto-queue on drop with EOS
                 Ok(false)
             }
         }
@@ -184,5 +194,3 @@ impl Drop for MediaExtractor {
         }
     }
 }
-
-unsafe impl Send for MediaExtractor {}

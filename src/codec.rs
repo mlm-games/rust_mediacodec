@@ -72,21 +72,19 @@ impl TryFrom<i32> for BufferFlag {
     }
 }
 
-impl TryFrom<BufferFlag> for i32 {
-    type Error = String;
-
-    fn try_from(value: BufferFlag) -> Result<Self, Self::Error> {
-        Ok(value as i32)
+impl From<BufferFlag> for i32 {
+    fn from(value: BufferFlag) -> Self {
+        value as i32
     }
 }
 
 impl BufferFlag {
-    pub fn is_contained_in(&self, flag: i32) -> bool {
-        flag & (*self as i32) > 0
+    pub fn is_contained_in(&self, flag: u32) -> bool {
+        flag & (*self as u32) > 0
     }
 
-    pub fn add_to_flag(&self, flag: &mut i32) {
-        *flag |= *self as i32;
+    pub fn add_to_flag(&self, flag: &mut u32) {
+        *flag |= *self as u32;
     }
 }
 
@@ -110,15 +108,11 @@ impl TryFrom<i32> for InfoFlag {
     }
 }
 
-impl TryFrom<InfoFlag> for i32 {
-    type Error = String;
-
-    fn try_from(value: InfoFlag) -> Result<Self, Self::Error> {
-        Ok(value as i32)
+impl From<InfoFlag> for i32 {
+    fn from(value: InfoFlag) -> Self {
+        value as i32
     }
 }
-
-
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -302,20 +296,13 @@ unsafe extern "C" {
     /// If you are done with a buffer, use this call to return the buffer to the codec. If you previously specified a surface when configuring this video decoder, you can optionally render the buffer.
     /// <hr />
     // Since: API 21
-    fn AMediaCodec_releaseOutputBuffer(
-        codec: *mut AMediaCodec,
-        index: usize,
-        render: bool,
-    ) -> i32;
+    fn AMediaCodec_releaseOutputBuffer(codec: *mut AMediaCodec, index: usize, render: bool) -> i32;
 
     /// Dynamically sets the output surface of a codec.
     /// This can only be used if the codec was configured with an output surface. The new output surface should have a compatible usage type to the original output surface. E.g. Codecs may not support switching from a SurfaceTexture (GPU readable) output to ImageReader (software readable) output.
     /// <hr />
     // Since: API 21
-    fn AMediaCodec_setOutputSurface(
-        codec: *mut AMediaCodec,
-        surface: *mut ANativeWindow,
-    ) -> i32;
+    fn AMediaCodec_setOutputSurface(codec: *mut AMediaCodec, surface: *mut ANativeWindow) -> i32;
 
     /// If you are done with a buffer, use this call to update its surface timestamp and return it to the codec to render it to the output surface. If you have not specified an output surface when configuring this video codec, this call will simply return the buffer to the codec.
     /// <hr />
@@ -359,10 +346,7 @@ unsafe extern "C" {
     /// <hr />
     /// Since: API 26
     #[cfg(feature = "api26")]
-    fn AMediaCodec_setInputSurface(
-        codec: *mut AMediaCodec,
-        surface: *mut ANativeWindow,
-    ) -> i32;
+    fn AMediaCodec_setInputSurface(codec: *mut AMediaCodec, surface: *mut ANativeWindow) -> i32;
 
     /// Signal additional parameters to the codec instance.
     ///
@@ -373,10 +357,7 @@ unsafe extern "C" {
     /// <hr />
     /// Since: API 26
     #[cfg(feature = "api26")]
-    fn AMediaCodec_setParameters(
-        codec: *mut AMediaCodec,
-        format: *const AMediaFormat,
-    ) -> i32;
+    fn AMediaCodec_setParameters(codec: *mut AMediaCodec, format: *const AMediaFormat) -> i32;
 
     /// Signals end-of-stream on input. Equivalent to submitting an empty buffer with `AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM` set.
     ///
@@ -603,9 +584,15 @@ impl CodecInputBuffer<'_> {
         }
     }
 
-    /// Cancel this buffer so it is NOT queued on drop. Use this on failure paths.
+    /// Cancel this buffer by returning it to the codec with zero size.
+    /// Use this on failure paths to avoid leaking the buffer from the codec's pool.
     pub fn cancel(&mut self) {
-        self.queued = true;
+        if !self.queued {
+            self.queued = true;
+            unsafe {
+                AMediaCodec_queueInputBuffer(self.codec, self.index, 0, 0, 0, 0);
+            }
+        }
     }
 }
 
@@ -625,8 +612,6 @@ impl Drop for CodecInputBuffer<'_> {
         }
     }
 }
-
-unsafe impl Send for CodecInputBuffer<'_> {}
 
 /// Represents a mediacodec output buffer
 ///
@@ -720,10 +705,10 @@ impl CodecOutputBuffer<'_> {
         let mime = self.format.get_string("mime")?;
         let is_audio: bool;
 
-        // We don't know if we might get some weird mime types, so we check for both audio and video explicitly
-        if mime.contains("audio") {
+        // Check for standard audio/video mime prefixes
+        if mime.starts_with("audio/") {
             is_audio = true;
-        } else if mime.contains("video") {
+        } else if mime.starts_with("video/") {
             is_audio = false;
         } else {
             debug!("Mime is not a valid one!");
@@ -732,7 +717,10 @@ impl CodecOutputBuffer<'_> {
 
         if is_audio {
             // Fetch the PCM Encoding
-            let encoding = self.format.get_i32("pcm-encoding")?;
+            let encoding = self
+                .format
+                .get_i32("pcm-encoding")
+                .unwrap_or(ENCODING_PCM_16BIT);
             let channels = self.format.get_i32("channel-count")?;
 
             // Can't have invalid channels!
@@ -832,8 +820,6 @@ impl Drop for CodecOutputBuffer<'_> {
     }
 }
 
-unsafe impl Send for CodecOutputBuffer<'_> {}
-
 /// The MediaCodec structure itself.
 ///
 /// Represents either a decoder or an encoder
@@ -908,15 +894,18 @@ impl MediaCodec {
         unsafe {
             // Keep the NativeWindow alive until after AMediaCodec_configure
             let surface_ptr = surface.map_or(null_mut(), |s| s.inner);
-            self.using_buffers = surface.is_none();
 
-            MediaStatus::make_result(AMediaCodec_configure(
+            let result = MediaStatus::make_result(AMediaCodec_configure(
                 self.inner,
-                format.inner,
+                format.inner.ptr,
                 surface_ptr,
                 null_mut(),
                 flags,
-            ))
+            ));
+            if result.is_ok() {
+                self.using_buffers = surface.is_none();
+            }
+            result
         }
     }
 
@@ -973,7 +962,10 @@ impl MediaCodec {
     /// Get an input buffer from mediacodec
     ///
     /// `timeout_us` is the timeout in microseconds. Use `-1` to block indefinitely.
-    pub fn dequeue_input(&mut self, timeout_us: i64) -> Result<CodecInputBuffer<'_>, DequeueInputError> {
+    pub fn dequeue_input(
+        &mut self,
+        timeout_us: i64,
+    ) -> Result<CodecInputBuffer<'_>, DequeueInputError> {
         unsafe {
             let index = AMediaCodec_dequeueInputBuffer(self.inner, timeout_us);
 
@@ -999,9 +991,9 @@ impl MediaCodec {
             } else if index == -1 {
                 Err(DequeueInputError::TryAgainLater)
             } else {
-                Err(DequeueInputError::CodecError(
-                    MediaStatus::from_i32(index as i32),
-                ))
+                Err(DequeueInputError::CodecError(MediaStatus::from_i32(
+                    index as i32,
+                )))
             }
         }
     }
@@ -1009,7 +1001,10 @@ impl MediaCodec {
     /// Get an output buffer from mediacodec
     ///
     /// `timeout_us` is the timeout in microseconds. Use `-1` to block indefinitely.
-    pub fn dequeue_output(&mut self, timeout_us: i64) -> Result<CodecOutputBuffer<'_>, DequeueOutputError> {
+    pub fn dequeue_output(
+        &mut self,
+        timeout_us: i64,
+    ) -> Result<CodecOutputBuffer<'_>, DequeueOutputError> {
         unsafe {
             let mut info = BufferInfo::default();
             let index = AMediaCodec_dequeueOutputBuffer(self.inner, &mut info, timeout_us);
@@ -1050,9 +1045,9 @@ impl MediaCodec {
                         format,
                     ))
                 }
-                _ => Err(DequeueOutputError::CodecError(
-                    MediaStatus::from_i32(index as i32),
-                )),
+                _ => Err(DequeueOutputError::CodecError(MediaStatus::from_i32(
+                    index as i32,
+                ))),
             }
         }
     }
@@ -1067,5 +1062,3 @@ impl Drop for MediaCodec {
         }
     }
 }
-
-unsafe impl Send for MediaCodec {}

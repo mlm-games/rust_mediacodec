@@ -42,14 +42,11 @@ extern "C" fn process() {
                     match extractor.read_next(&mut buffer) {
                         Ok(true) => {}
                         Ok(false) => {
-                            debug!(
-                                "MediaExtractor.read_next() returned false! has_next(): {}",
-                                extractor.has_next()
-                            );
-                            buffer.cancel();
+                            debug!("End of stream — EOS queued on buffer drop");
                             break;
                         }
-                        Err(_) => {
+                        Err(e) => {
+                            debug!("read error: {e:?}");
                             buffer.cancel();
                             break;
                         }
