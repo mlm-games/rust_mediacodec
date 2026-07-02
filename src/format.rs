@@ -5,6 +5,8 @@ use std::{
     ptr::null_mut,
 };
 
+use crate::MediaStatus;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct AMediaFormat {
@@ -15,7 +17,7 @@ pub struct AMediaFormat {
 #[link(name = "mediandk")]
 unsafe extern "C" {
     fn AMediaFormat_new() -> *mut AMediaFormat;
-    fn AMediaFormat_delete(format: *mut AMediaFormat) -> isize;
+    fn AMediaFormat_delete(format: *mut AMediaFormat) -> i32;
     fn AMediaFormat_toString(format: *mut AMediaFormat) -> *const c_char;
     fn AMediaFormat_getInt32(format: *mut AMediaFormat, name: *const c_char, out: *mut i32)
     -> bool;
@@ -87,7 +89,7 @@ unsafe extern "C" {
     fn AMediaFormat_copy(to: *mut AMediaFormat, from: *mut AMediaFormat) -> isize;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MediaFormat {
     pub(crate) inner: *mut AMediaFormat,
 }
@@ -98,18 +100,22 @@ fn cstr(s: &str) -> CString {
 
 impl MediaFormat {
     /// Construct a MediaFormat from a raw pointer
-    pub fn from_raw(inner: *mut AMediaFormat) -> Self {
+    ///
+    /// Safety:
+    /// `inner` must be a valid, non-null pointer to an `AMediaFormat` that this
+    /// `MediaFormat` will own. The caller must ensure the pointer is valid for the
+    /// lifetime of the returned `MediaFormat`.
+    pub unsafe fn from_raw(inner: *mut AMediaFormat) -> Self {
         Self { inner }
     }
 
-    #[must_use]
-    pub fn new() -> Option<Self> {
+    pub fn new() -> Result<Self, MediaStatus> {
         unsafe {
             let inner = AMediaFormat_new();
             if inner.is_null() {
-                return None;
+                return Err(MediaStatus::ErrorUnknown);
             }
-            Some(Self { inner })
+            Ok(Self { inner })
         }
     }
 
@@ -250,4 +256,3 @@ impl Drop for MediaFormat {
 }
 
 unsafe impl Send for MediaFormat {}
-unsafe impl Sync for MediaFormat {}

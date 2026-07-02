@@ -14,11 +14,25 @@ timeout 2 > nul
 
 echo Opening Logcat...
 
-rem Get the PID
-FOR /F %%i IN ('adb shell pidof rust.mediacodec') DO set pid=%%i
+rem Get the PID (retry, since process may not be up immediately)
+set pid=
+set retries=0
+:retry_pid
+FOR /F %%i IN ('adb shell pidof rust.mediacodec 2^>nul') DO set pid=%%i
+if "%pid%"=="" (
+    set /a retries+=1
+    if %retries% lss 10 (
+        timeout 1 > nul
+        goto retry_pid
+    )
+)
 
-echo PID: %pid%
+if "%pid%"=="" (
+    echo Could not find PID for rust.mediacodec. Falling back to all logs.
+    adb logcat
+) else (
+    echo PID: %pid%
+    adb logcat --pid=%pid%
+)
 
-adb logcat --pid=%pid%
-
-@REM adb 
+@REM adb

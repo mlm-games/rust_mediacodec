@@ -1,5 +1,8 @@
 use log::debug;
-use mediacodec::{DequeueOutputError, Frame, MediaCodec, MediaExtractor, SampleFormat, VideoFrame};
+use mediacodec::{
+    DequeueInputError, DequeueOutputError, Frame, MediaCodec, MediaExtractor, SampleFormat,
+    VideoFrame,
+};
 
 #[unsafe(no_mangle)]
 extern "C" fn process() {
@@ -13,13 +16,13 @@ extern "C" fn process() {
         let format = extractor.track_format(i).unwrap();
         debug!("{}", format.to_string());
         let mime_type = format.get_string("mime").unwrap();
-        let mut codec = MediaCodec::create_decoder(&mime_type).unwrap();
+        let mut codec = MediaCodec::create_decoder(&mime_type).expect("failed to create decoder");
 
         codec.init(&format, None, 0).unwrap();
 
         codec.start().unwrap();
         decoders.push(codec);
-        extractor.select_track(i);
+        extractor.select_track(i).unwrap();
     }
 
     while extractor.has_next() {
@@ -33,17 +36,31 @@ extern "C" fn process() {
         let codec = &mut decoders[index as usize];
 
         // Fetch the codec's input buffer
-        while let Ok(mut buffer) = codec.dequeue_input() {
-            match extractor.read_next(&mut buffer) {
-                Ok(true) => {}
-                Ok(false) => {
-                    debug!(
-                        "MediaExtractor.read_next() returned false! has_next(): {}",
-                        extractor.has_next()
-                    );
+        loop {
+            match codec.dequeue_input(100) {
+                Ok(mut buffer) => {
+                    match extractor.read_next(&mut buffer) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            debug!(
+                                "MediaExtractor.read_next() returned false! has_next(): {}",
+                                extractor.has_next()
+                            );
+                            buffer.cancel();
+                            break;
+                        }
+                        Err(_) => {
+                            buffer.cancel();
+                            break;
+                        }
+                    }
+                    // buffer is queued on drop
+                }
+                Err(DequeueInputError::TryAgainLater) => break,
+                Err(DequeueInputError::CodecError(e)) => {
+                    debug!("Codec error: {e:?}");
                     break;
                 }
-                Err(_) => break,
             }
 
             // When the buffer gets dropped (here), the buffer will be queued back to MediaCodec
@@ -51,7 +68,7 @@ extern "C" fn process() {
         }
 
         loop {
-            match codec.dequeue_output() {
+            match codec.dequeue_output(100) {
                 Ok(mut buffer) => {
                     if let Some(ref frame) = buffer.frame() {
                         match frame {

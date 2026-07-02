@@ -2,6 +2,8 @@ use std::{ffi::c_void, ops::BitOr, ptr::null_mut};
 
 use jni::objects::JObject;
 
+use crate::MediaStatus;
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct ANativeWindow {
@@ -9,33 +11,41 @@ pub struct ANativeWindow {
     _marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeWindowFormat {
     Rgba8 = 1,
-    Rgb8 = 2,
+    Rgbx8888 = 2,
     Rgb565 = 4,
     Yuv420 = 0x23,
-    Other,
+    Other(i32),
+}
+
+impl From<i32> for NativeWindowFormat {
+    fn from(value: i32) -> Self {
+        match value {
+            1 => Self::Rgba8,
+            2 => Self::Rgbx8888,
+            4 => Self::Rgb565,
+            0x23 => Self::Yuv420,
+            _ => Self::Other(value),
+        }
+    }
 }
 
 impl NativeWindowFormat {
-    fn values() -> &'static [Self] {
-        use NativeWindowFormat::*;
-        &[Rgba8, Rgb8, Rgb565, Yuv420]
+    pub fn raw_value(self) -> i32 {
+        match self {
+            Self::Rgba8 => 1,
+            Self::Rgbx8888 => 2,
+            Self::Rgb565 => 4,
+            Self::Yuv420 => 0x23,
+            Self::Other(v) => v,
+        }
     }
 }
 
-impl From<isize> for NativeWindowFormat {
-    fn from(value: isize) -> Self {
-        Self::values()
-            .iter()
-            .find(|&&v| v as isize == value)
-            .copied()
-            .unwrap_or(Self::Other)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeWindowTransform {
     Identity = 0x00,
     MirrorHorizontal = 0x01,
@@ -46,9 +56,9 @@ pub enum NativeWindowTransform {
 }
 
 impl BitOr for NativeWindowTransform {
-    type Output = isize;
+    type Output = u32;
     fn bitor(self, rhs: Self) -> Self::Output {
-        self as isize | rhs as isize
+        self as u32 | rhs as u32
     }
 }
 
@@ -62,6 +72,7 @@ pub struct NativeWindowBuffer {
     pub bits: *mut c_void,
     reserved: [u32; 6],
     window: *mut ANativeWindow,
+    locked: bool,
 }
 
 impl NativeWindowBuffer {
@@ -75,6 +86,7 @@ impl NativeWindowBuffer {
             reserved: [0; 6],
             bits: null_mut(),
             window,
+            locked: false,
         }
     }
 }
@@ -83,7 +95,9 @@ impl Drop for NativeWindowBuffer {
     fn drop(&mut self) {
         if !self.window.is_null() {
             unsafe {
-                ANativeWindow_unlockAndPost(self.window);
+                if self.locked {
+                    ANativeWindow_unlockAndPost(self.window);
+                }
                 ANativeWindow_release(self.window);
             }
         }
@@ -134,7 +148,12 @@ pub struct NativeWindow {
 }
 
 impl NativeWindow {
-    pub fn from_raw(inner: *mut ANativeWindow) -> Self {
+    /// # Safety
+    ///
+    /// `inner` must be a valid, non-null pointer to an `ANativeWindow` with a reference count
+    /// that this `NativeWindow` will own. The caller must ensure the pointer is valid for the
+    /// lifetime of the returned `NativeWindow`.
+    pub unsafe fn from_raw(inner: *mut ANativeWindow) -> Self {
         Self { inner }
     }
 
@@ -174,18 +193,24 @@ impl NativeWindow {
     }
 
     pub fn format(&self) -> NativeWindowFormat {
-        unsafe { NativeWindowFormat::from(ANativeWindow_getFormat(self.inner) as isize) }
+        unsafe { NativeWindowFormat::from(ANativeWindow_getFormat(self.inner)) }
     }
 
-    pub fn set_geometry(&mut self, width: i32, height: i32, format: NativeWindowFormat) {
-        unsafe {
-            ANativeWindow_setBuffersGeometry(self.inner, width, height, format as i32);
-        }
+    pub fn set_geometry(
+        &mut self,
+        width: i32,
+        height: i32,
+        format: NativeWindowFormat,
+    ) -> Result<(), MediaStatus> {
+        let raw = format.raw_value();
+        let result = unsafe { ANativeWindow_setBuffersGeometry(self.inner, width, height, raw) };
+        MediaStatus::make_result(result)
     }
 
     pub fn lock(&mut self, bounds: &mut ARect) -> Option<NativeWindowBuffer> {
         let mut buffer = NativeWindowBuffer::new(self.inner);
         let ok = unsafe { ANativeWindow_lock(self.inner, &mut buffer, bounds) } == 0;
+        buffer.locked = ok;
         ok.then_some(buffer)
     }
 }

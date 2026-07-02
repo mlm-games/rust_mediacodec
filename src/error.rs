@@ -32,53 +32,51 @@ pub enum MediaStatus {
 }
 
 impl MediaStatus {
-    fn all() -> &'static [Self] {
-        use MediaStatus::*;
-        &[
-            Ok,
-            ErrorInsufficientResource,
-            ErrorReclaimed,
-            ErrorUnknown,
-            ErrorMalformed,
-            ErrorUnsupported,
-            ErrorInvalidObject,
-            ErrorInvalidParameter,
-            ErrorInvalidOperation,
-            ErrorEndOfStream,
-            ErrorIO,
-            ErrorWouldBlock,
-            DRMErrorBase,
-            DRMNotProvisioned,
-            DRMResourceBusy,
-            DRMDeviceRevoked,
-            DRMShortBuffer,
-            DRMSessionNotOpened,
-            DRMTamperDetected,
-            DRMVerifyFailed,
-            DRMNeedKey,
-            DRMLicenseExpired,
-            ImgReaderErrorBase,
-            ImgReaderNoBufferAvailable,
-            ImgReaderMaxImagesAcquired,
-            ImgReaderCannotLockImage,
-            ImgReaderCannotUnlockImage,
-            ImgReaderImageNotLocked,
-        ]
-    }
-
-    pub fn make_result(value: isize) -> Result<isize, MediaStatus> {
-        match MediaStatus::try_from(value) {
-            Ok(status) if status.is_ok() => Ok(status as isize),
-            Ok(status) => Err(status),
-            Err(_) => Ok(value),
+    /// Convert a raw `i32` from FFI to a `MediaStatus`.
+    /// This is safe because unknown values are mapped to `Ok` (if >= 0) or `ErrorUnknown` (if < 0).
+    pub fn from_i32(value: i32) -> Self {
+        match value {
+            0 => Self::Ok,
+            1100 => Self::ErrorInsufficientResource,
+            1101 => Self::ErrorReclaimed,
+            -10000 => Self::ErrorUnknown,
+            -10001 => Self::ErrorMalformed,
+            -10002 => Self::ErrorUnsupported,
+            -10003 => Self::ErrorInvalidObject,
+            -10004 => Self::ErrorInvalidParameter,
+            -10005 => Self::ErrorInvalidOperation,
+            -10006 => Self::ErrorEndOfStream,
+            -10007 => Self::ErrorIO,
+            -10008 => Self::ErrorWouldBlock,
+            -20000 => Self::DRMErrorBase,
+            -20001 => Self::DRMNotProvisioned,
+            -20002 => Self::DRMResourceBusy,
+            -20003 => Self::DRMDeviceRevoked,
+            -20004 => Self::DRMShortBuffer,
+            -20005 => Self::DRMSessionNotOpened,
+            -20006 => Self::DRMTamperDetected,
+            -20007 => Self::DRMVerifyFailed,
+            -20008 => Self::DRMNeedKey,
+            -20009 => Self::DRMLicenseExpired,
+            -30000 => Self::ImgReaderErrorBase,
+            -30001 => Self::ImgReaderNoBufferAvailable,
+            -30002 => Self::ImgReaderMaxImagesAcquired,
+            -30003 => Self::ImgReaderCannotLockImage,
+            -30004 => Self::ImgReaderCannotUnlockImage,
+            -30005 => Self::ImgReaderImageNotLocked,
+            v if v >= 0 => Self::Ok,
+            _ => Self::ErrorUnknown,
         }
     }
 
-    pub fn result(&self) -> Result<isize, Self> {
-        if self.is_ok() {
-            Ok(*self as isize)
+    /// Convert a raw `i32` FFI return value into `Result<(), MediaStatus>`.
+    /// Unknown negative values become `ErrorUnknown`; unknown non-negative values succeed.
+    pub fn make_result(value: i32) -> Result<(), MediaStatus> {
+        let status = Self::from_i32(value);
+        if status.is_ok() {
+            Ok(())
         } else {
-            Err(*self)
+            Err(status)
         }
     }
 
@@ -87,14 +85,19 @@ impl MediaStatus {
     }
 }
 
-impl TryFrom<isize> for MediaStatus {
-    type Error = &'static str;
-
-    fn try_from(value: isize) -> Result<Self, Self::Error> {
-        Self::all()
-            .iter()
-            .find(|&&s| s as isize == value)
-            .copied()
-            .ok_or("Not Found")
+impl MediaStatus {
+    /// Convert a raw `isize` FFI return value (e.g. from `dequeueInputBuffer`) into `Result<isize, MediaStatus>`.
+    /// Non-negative values pass through as `Ok`; negative values are mapped to error.
+    pub fn make_result_isize(value: isize) -> Result<isize, MediaStatus> {
+        if value >= 0 {
+            Ok(value)
+        } else {
+            let status = Self::from_i32(value as i32);
+            if status.is_ok() {
+                Ok(value)
+            } else {
+                Err(status)
+            }
+        }
     }
 }

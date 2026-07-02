@@ -9,13 +9,20 @@ This library provides Rust bindings to the Android MediaCodec APIs. It also adds
 - [x] Safe codec buffers abstraction
 - [x] Some extra utilities to make working with the library easier
 
-Some Decoding example:
+## Feature flags
+
+- `api24` — no additional APIs
+- `api26` — `createInputSurface`, `createPersistentInputSurface`, `setInputSurface`, `setParameters`, `signalEndOfInputStream`
+- `api28` — `getBufferFormat`, `getName`, `setAsyncNotifyCallback`, `releaseCrypto`, `getInputFormat`, `AMediaCodecActionCode_isRecoverable`, `AMediaCodecActionCode_isTransient`, `getDouble`/`setDouble`/`getRect`/`setSize`/`setRect` on `MediaFormat`
+- `api29` — `clear`/`copy` on `MediaFormat`
+
+## Decoding example
 
 ```rust
 use log::debug;
-use mediacodec::{Frame, MediaCodec, MediaExtractor, SampleFormat, VideoFrame};
+use mediacodec::{DequeueInputError, DequeueOutputError, Frame, MediaCodec, MediaExtractor, SampleFormat, VideoFrame};
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn process() {
     let mut extractor = MediaExtractor::from_url("/path/to/a/resource").unwrap();
 
@@ -30,68 +37,76 @@ extern "C" fn process() {
         let mut codec = MediaCodec::create_decoder(&mime_type).unwrap();
 
         codec.init(&format, None, 0).unwrap();
-
         codec.start().unwrap();
         decoders.push(codec);
-        extractor.select_track(i);
+        extractor.select_track(i).unwrap();
     }
 
     while extractor.has_next() {
-        // 1. Get the track index
         let index = extractor.track_index();
-
         if index < 0 {
             break;
         }
 
         let codec = &mut decoders[index as usize];
 
-        // Fetch the codec's input buffer
-        while let Ok(mut buffer) = codec.dequeue_input() {
-            match extractor.read_next(&mut buffer) {
-                Ok(true) => {}
-                Ok(false) => {
-                    debug!(
-                        "MediaExtractor.read_next() returned false! has_next(): {}",
-                        extractor.has_next()
-                    );
+        loop {
+            match codec.dequeue_input(100) {
+                Ok(mut buffer) => {
+                    match extractor.read_next(&mut buffer) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            buffer.cancel();
+                            break;
+                        }
+                        Err(_) => {
+                            buffer.cancel();
+                            break;
+                        }
+                    }
+                }
+                Err(DequeueInputError::TryAgainLater) => break,
+                Err(DequeueInputError::CodecError(e)) => {
+                    debug!("Codec error: {e:?}");
                     break;
                 }
-                Err(_) => break,
             }
 
             // When the buffer gets dropped (here), the buffer will be queued back to MediaCodec
             // And we don't have to do anything else
         }
 
-        // Check for output
-        while let Ok(mut buffer) = codec.dequeue_output() {
-            if let Some(ref frame) = buffer.frame() {
-                match frame {
-                    Frame::Audio(value) => match value.format() {
-                        SampleFormat::S16(_) => {
-                            // Do something with the audio frame
+        loop {
+            match codec.dequeue_output(100) {
+                Ok(mut buffer) => {
+                    if let Some(ref frame) = buffer.frame() {
+                        match frame {
+                            Frame::Audio(value) => match value.format() {
+                                SampleFormat::S16(_) => {}
+                                SampleFormat::F32(_) => {}
+                            },
+                            Frame::Video(value) => match value {
+                                VideoFrame::Hardware => {}
+                                VideoFrame::RawFrame(_) => {}
+                            },
                         }
-                        SampleFormat::F32(_) => {
-                            // Do something with the audio frame
-                        }
-                    },
-                    Frame::Video(value) => match value {
-                        VideoFrame::Hardware => {
-                            // Nothing TODO. The frame will be rendered
-                        }
-                        VideoFrame::RawFrame(_) => {
-                            // Read out the raw buffers or something
-                        }
-                    },
+                    }
+                    buffer.set_render(true);
+                }
+                Err(DequeueOutputError::TryAgainLater) => break,
+                Err(DequeueOutputError::OutputFormatChanged) => {
+                    debug!("Output format changed");
+                    continue;
+                }
+                Err(DequeueOutputError::OutputBuffersChanged) => continue,
+                Err(DequeueOutputError::CodecError(e)) => {
+                    debug!("Codec error: {e:?}");
+                    break;
                 }
             }
-
-            // Set the buffer to render when dropped. Only applicable to video codecs that have a hardware buffer (i.e, attached to a native window)
-            buffer.set_render(true);
         }
     }
 }
 ```
 
-You can find some more examples in the **examples** directory.
+You can find more examples in the **examples** directory.

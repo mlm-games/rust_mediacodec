@@ -25,26 +25,26 @@ unsafe extern "C" {
     fn AMediaMuxer_new(fd: i32, format: OutputFormat) -> *mut AMediaMuxer;
 
     /// Since: API 21
-    fn AMediaMuxer_delete(muxer: *mut AMediaMuxer) -> MediaStatus;
+    fn AMediaMuxer_delete(muxer: *mut AMediaMuxer) -> i32;
 
     /// Since: API 21
     fn AMediaMuxer_setLocation(
         muxer: *mut AMediaMuxer,
         latitude: f32,
         longitude: f32,
-    ) -> MediaStatus;
+    ) -> i32;
 
     /// Since: API 21
-    fn AMediaMuxer_setOrientationHint(muxer: *mut AMediaMuxer, degrees: i32) -> MediaStatus;
+    fn AMediaMuxer_setOrientationHint(muxer: *mut AMediaMuxer, degrees: i32) -> i32;
 
     /// Since: API 21
-    fn AMediaMuxer_addTrack(muxer: *mut AMediaMuxer, format: *const AMediaFormat) -> isize;
+    fn AMediaMuxer_addTrack(muxer: *mut AMediaMuxer, format: *const AMediaFormat) -> i32;
 
     /// Since: API 21
-    fn AMediaMuxer_start(muxer: *mut AMediaMuxer) -> MediaStatus;
+    fn AMediaMuxer_start(muxer: *mut AMediaMuxer) -> i32;
 
     /// Since: API 21
-    fn AMediaMuxer_stop(muxer: *mut AMediaMuxer) -> MediaStatus;
+    fn AMediaMuxer_stop(muxer: *mut AMediaMuxer) -> i32;
 
     /// Since: API 21
     fn AMediaMuxer_writeSampleData(
@@ -52,7 +52,7 @@ unsafe extern "C" {
         track_index: usize,
         data: *const u8,
         info: *const BufferInfo,
-    ) -> MediaStatus;
+    ) -> i32;
 }
 
 // FFI FUNCTIONS END
@@ -85,15 +85,14 @@ impl MediaMuxer {
     /// `fd` is the file descriptor to write data to
     ///
     /// `output_format` is the container format for the output
-    #[must_use]
-    pub fn new(fd: i32, output_format: OutputFormat) -> Option<Self> {
+    pub fn new(fd: i32, output_format: OutputFormat) -> Result<Self, MediaStatus> {
         let value = unsafe { AMediaMuxer_new(fd, output_format) };
 
         if value.is_null() {
-            return None;
+            return Err(MediaStatus::ErrorUnknown);
         }
 
-        Some(Self {
+        Ok(Self {
             inner: value,
             latitude: 0f32,
             longitude: 0f32,
@@ -114,21 +113,20 @@ impl MediaMuxer {
     /// Latitude must be in the range (-90, 90)
     ///
     /// Longitude must be in the range (-180, 180)
-    pub fn set_location(&mut self, latitude: f32, longitude: f32) -> &mut Self {
-        if latitude >= -90.0 && latitude <= 90.0 {
-            self.latitude = latitude;
+    pub fn set_location(&mut self, latitude: f32, longitude: f32) -> Result<&mut Self, MediaStatus> {
+        if latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0 {
+            return Err(MediaStatus::ErrorInvalidParameter);
         }
-        if longitude >= -180.0 && longitude <= 180.0 {
-            self.longitude = longitude;
-        }
+        self.latitude = latitude;
+        self.longitude = longitude;
         self.location_set = true;
-        self
+        Ok(self)
     }
 
     /// Sets the orientation hint for output video playback.
     ///
     /// This method should be called before calling start. Calling this method will not rotate the video frame when muxer is generating the file, but add a composition matrix containing the rotation angle in the output video if the output format is Mpeg4, so that a video player can choose the proper orientation for playback.
-    /// Note that some video players must choose to ignore the composition matrix during playback.
+    /// Note that some video players may choose to ignore the composition matrix during playback.
     ///
     /// The angle is specified in degrees, clockwise.
     ///
@@ -145,16 +143,16 @@ impl MediaMuxer {
     /// Adds a track with the specified format.
     ///
     /// Returns the index of the new track or a `MediaStatus` in case of failure.
-    #[must_use]
-    pub fn add_track(&mut self, format: MediaFormat) -> Result<isize, MediaStatus> {
+    pub fn add_track(&mut self, format: MediaFormat) -> Result<i32, MediaStatus> {
         let result = unsafe { AMediaMuxer_addTrack(self.inner, format.inner) };
 
-        let result = MediaStatus::make_result(result)?;
+        MediaStatus::make_result(result)?;
+        let track_index = self.track_formats.len() as i32;
 
         // Keep the format, the user might need it
         self.track_formats.push(format);
 
-        Ok(result)
+        Ok(track_index)
     }
 
     /// Returns the number of tracks added to the muxer
@@ -171,8 +169,7 @@ impl MediaMuxer {
         Some(&self.track_formats[index])
     }
 
-    /// Start the muxer. Should be called only when tracks
-    #[must_use]
+    /// Start the muxer. Should be called only after tracks have been added.
     pub fn start(&mut self) -> Result<(), MediaStatus> {
         if let MuxerState::Started = self.state {
             return Ok(());
@@ -185,14 +182,21 @@ impl MediaMuxer {
 
         unsafe {
             if self.location_set {
-                AMediaMuxer_setLocation(self.inner, self.latitude, self.longitude).result()?;
+                MediaStatus::make_result(AMediaMuxer_setLocation(
+                    self.inner,
+                    self.latitude,
+                    self.longitude,
+                ))?;
             }
             if self.orientation_hint != 0 {
-                AMediaMuxer_setOrientationHint(self.inner, self.orientation_hint).result()?;
+                MediaStatus::make_result(AMediaMuxer_setOrientationHint(
+                    self.inner,
+                    self.orientation_hint,
+                ))?;
             }
 
             // Start the muxer
-            AMediaMuxer_start(self.inner).result()?;
+            MediaStatus::make_result(AMediaMuxer_start(self.inner))?;
 
             self.state = MuxerState::Started;
         }
@@ -204,13 +208,12 @@ impl MediaMuxer {
     ///
     /// Once the muxer stops, it cannot be restarted, and therefore this function takes ownership
     /// of the muxer instance
-    #[must_use]
     pub fn stop(self) -> Result<(), MediaStatus> {
         if let MuxerState::Uninitialized = self.state {
             return Ok(());
         }
 
-        unsafe { AMediaMuxer_stop(self.inner) }.result().map(|_| ())
+        unsafe { MediaStatus::make_result(AMediaMuxer_stop(self.inner)) }
     }
 
     /// Writes an encoded sample into the muxer.
@@ -218,7 +221,6 @@ impl MediaMuxer {
     /// The application needs to make sure that the samples are written into the right tracks.
     ///
     /// Also, it needs to make sure the samples for each track are written in chronological order (e.g. in the order they are provided by the encoder)
-    #[must_use]
     pub fn write_sample_data(
         &mut self,
         track_index: usize,
@@ -228,10 +230,26 @@ impl MediaMuxer {
         if let MuxerState::Uninitialized = self.state {
             return Err(MediaStatus::ErrorInvalidOperation);
         }
-        unsafe { AMediaMuxer_writeSampleData(self.inner, track_index, data.as_ptr(), buffer_info) }
-            .result()?;
-
-        Ok(())
+        if track_index >= self.track_formats.len() {
+            return Err(MediaStatus::ErrorInvalidParameter);
+        }
+        if buffer_info.offset < 0 || buffer_info.size < 0 {
+            return Err(MediaStatus::ErrorInvalidParameter);
+        }
+        let end = (buffer_info.offset as usize)
+            .checked_add(buffer_info.size as usize)
+            .ok_or(MediaStatus::ErrorInvalidParameter)?;
+        if end > data.len() {
+            return Err(MediaStatus::ErrorInvalidParameter);
+        }
+        unsafe {
+            MediaStatus::make_result(AMediaMuxer_writeSampleData(
+                self.inner,
+                track_index,
+                data.as_ptr(),
+                buffer_info,
+            ))
+        }
     }
 }
 

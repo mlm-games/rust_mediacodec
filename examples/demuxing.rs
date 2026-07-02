@@ -1,5 +1,5 @@
 use log::debug;
-use mediacodec::{Frame, MediaExtractor, SampleFormat, VideoFrame};
+use mediacodec::MediaExtractor;
 
 #[unsafe(no_mangle)]
 extern "C" fn process() {
@@ -10,18 +10,11 @@ extern "C" fn process() {
     for i in 0..extractor.track_count() {
         let format = extractor.track_format(i).unwrap();
         debug!("{}", format.to_string());
-        let mime_type = format.get_string("mime").unwrap();
-        extractor.select_track(i);
+        let _mime_type = format.get_string("mime").unwrap();
+        extractor.select_track(i).unwrap();
     }
 
     while extractor.has_next() {
-        // 1. Get the track index
-        let index = extractor.track_index();
-
-        if index < 0 {
-            break;
-        }
-
-        // Get a codec buffer and read data into it
+        let _index = extractor.track_index();
     }
 }
