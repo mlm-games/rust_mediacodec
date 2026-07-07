@@ -186,12 +186,14 @@ impl MediaFormat {
 
     #[must_use]
     pub fn is_audio(&self) -> bool {
-        self.get_string("mime").is_some_and(|m| m.starts_with("audio/"))
+        self.get_string("mime")
+            .is_some_and(|m| m.starts_with("audio/"))
     }
 
     #[must_use]
     pub fn is_video(&self) -> bool {
-        self.get_string("mime").is_some_and(|m| m.starts_with("video/"))
+        self.get_string("mime")
+            .is_some_and(|m| m.starts_with("video/"))
     }
 
     #[cfg(feature = "api28")]
@@ -265,4 +267,6 @@ impl fmt::Display for MediaFormat {
     }
 }
 
-
+// NEEDED FOR BAABA, DO NOT REMOVE
+unsafe impl Send for MediaFormat {}
+unsafe impl Sync for MediaFormat {}

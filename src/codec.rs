@@ -1062,3 +1062,7 @@ impl Drop for MediaCodec {
         }
     }
 }
+
+// NEEDED FOR BAABA, DO NOT REMOVE
+unsafe impl Send for MediaCodec {}
+unsafe impl Sync for MediaCodec {}
