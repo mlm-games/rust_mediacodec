@@ -18,7 +18,7 @@ rem Get the PID (retry, since process may not be up immediately)
 set pid=
 set retries=0
 :retry_pid
-FOR /F %%i IN ('adb shell pidof rust.mediacodec 2^>nul') DO set pid=%%i
+FOR /F %%i IN ('adb shell pidof rust.anodecs 2^>nul') DO set pid=%%i
 if "%pid%"=="" (
     set /a retries+=1
     if %retries% lss 10 (
@@ -28,7 +28,7 @@ if "%pid%"=="" (
 )
 
 if "%pid%"=="" (
-    echo Could not find PID for rust.mediacodec. Falling back to all logs.
+    echo Could not find PID for rust.anodecs. Falling back to all logs.
     adb logcat
 ) else (
     echo PID: %pid%

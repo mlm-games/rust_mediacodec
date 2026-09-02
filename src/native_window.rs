@@ -227,5 +227,3 @@ impl Drop for NativeWindow {
         unsafe { ANativeWindow_release(self.inner) };
     }
 }
-
-

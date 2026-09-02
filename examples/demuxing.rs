@@ -1,5 +1,7 @@
+#![cfg(target_os = "android")]
+
+use anodecs::MediaExtractor;
 use log::debug;
-use mediacodec::MediaExtractor;
 
 #[unsafe(no_mangle)]
 extern "C" fn process() {

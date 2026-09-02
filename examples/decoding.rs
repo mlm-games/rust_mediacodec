@@ -1,8 +1,10 @@
-use log::debug;
-use mediacodec::{
+#![cfg(target_os = "android")]
+
+use anodecs::{
     DequeueInputError, DequeueOutputError, Frame, MediaCodec, MediaExtractor, SampleFormat,
     VideoFrame,
 };
+use log::debug;
 
 #[unsafe(no_mangle)]
 extern "C" fn process() {

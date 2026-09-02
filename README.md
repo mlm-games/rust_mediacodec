@@ -1,5 +1,7 @@
-# Rust MediaCodec
+# anodecs (fork of rust_mediacodec)
 This library provides Rust bindings to the Android MediaCodec APIs. It also adds some pretty nifty utilities to make working with buffers on Android easier.
+
+Published as [`anodecs`](https://crates.io/crates/anodecs) (fork of `mediacodec` with `anodecs` name for crates.io).
 
 ## Features Currently Implemented
 - [x] MediaCodec
@@ -16,11 +18,17 @@ This library provides Rust bindings to the Android MediaCodec APIs. It also adds
 - `api28` — `getBufferFormat`, `getName`, `setAsyncNotifyCallback`, `releaseCrypto`, `getInputFormat`, `AMediaCodecActionCode_isRecoverable`, `AMediaCodecActionCode_isTransient`, `getDouble`/`setDouble`/`getRect`/`setSize`/`setRect` on `MediaFormat`
 - `api29` — `clear`/`copy` on `MediaFormat`
 
+## Using
+
+```toml
+anodecs = "0.1"
+```
+
 ## Decoding example
 
 ```rust
 use log::debug;
-use mediacodec::{DequeueInputError, DequeueOutputError, Frame, MediaCodec, MediaExtractor, SampleFormat, VideoFrame};
+use anodecs::{DequeueInputError, DequeueOutputError, Frame, MediaCodec, MediaExtractor, SampleFormat, VideoFrame};
 
 #[unsafe(no_mangle)]
 extern "C" fn process() {

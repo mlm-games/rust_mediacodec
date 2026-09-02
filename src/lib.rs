@@ -5,7 +5,7 @@
 //!
 //! ### Decoding
 //! ```
-//! # use mediacodec::{Frame, MediaCodec, MediaExtractor, SampleFormat, VideoFrame};
+//! # use anodecs::{Frame, MediaCodec, MediaExtractor, SampleFormat, VideoFrame};
 //! # #[unsafe(no_mangle)]
 //! # extern "C" fn process() {
 //!     let mut extractor = MediaExtractor::from_url("/path/to/a/resource").unwrap();
@@ -15,7 +15,7 @@
 //!
 //! ### Demuxing
 //! ```
-//! # use mediacodec::MediaExtractor;
+//! # use anodecs::MediaExtractor;
 //! # #[unsafe(no_mangle)]
 //! # extern "C" fn process() {
 //!     let mut extractor = MediaExtractor::from_url("/path/to/a/resource").unwrap();

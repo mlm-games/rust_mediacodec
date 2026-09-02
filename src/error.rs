@@ -73,16 +73,10 @@ impl MediaStatus {
     /// Unknown negative values become `ErrorUnknown`; unknown non-negative values succeed.
     pub fn make_result(value: i32) -> Result<(), MediaStatus> {
         let status = Self::from_i32(value);
-        if status.is_ok() {
-            Ok(())
-        } else {
-            Err(status)
-        }
+        if status.is_ok() { Ok(()) } else { Err(status) }
     }
 
     pub fn is_ok(&self) -> bool {
         *self == Self::Ok
     }
 }
-
-

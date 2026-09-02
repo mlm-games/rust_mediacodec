@@ -28,11 +28,7 @@ unsafe extern "C" {
     fn AMediaMuxer_delete(muxer: *mut AMediaMuxer) -> i32;
 
     /// Since: API 21
-    fn AMediaMuxer_setLocation(
-        muxer: *mut AMediaMuxer,
-        latitude: f32,
-        longitude: f32,
-    ) -> i32;
+    fn AMediaMuxer_setLocation(muxer: *mut AMediaMuxer, latitude: f32, longitude: f32) -> i32;
 
     /// Since: API 21
     fn AMediaMuxer_setOrientationHint(muxer: *mut AMediaMuxer, degrees: i32) -> i32;
@@ -113,7 +109,11 @@ impl MediaMuxer {
     /// Latitude must be in the range (-90, 90)
     ///
     /// Longitude must be in the range (-180, 180)
-    pub fn set_location(&mut self, latitude: f32, longitude: f32) -> Result<&mut Self, MediaStatus> {
+    pub fn set_location(
+        &mut self,
+        latitude: f32,
+        longitude: f32,
+    ) -> Result<&mut Self, MediaStatus> {
         if !latitude.is_finite()
             || !longitude.is_finite()
             || !(-90.0..=90.0).contains(&latitude)
