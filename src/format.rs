@@ -289,28 +289,28 @@ unsafe impl Sync for MediaFormat {}
 pub enum ColorFormat {
     Yuv420Planar,
     Yuv420SemiPlanar,
-    Yuv420Flexible,
     Yuv420PackedPlanar,
-    Yuv420SemiPlanarVendorA,
-    Yuv420FlexibleVendorA,
-    Yuv420FlexibleVendorB,
+    Yuv420PackedSemiPlanar,
+    Yuv420Flexible,
+    YuvP010,
+    QcomYuv420SemiPlanar,
     TiYuv420PackedSemiPlanar,
-    P010,
+    Surface,
     Unknown(i32),
 }
 
 impl ColorFormat {
     pub fn from_i32(v: i32) -> Self {
-        match v as u32 {
+        match v {
             19 => Self::Yuv420Planar,
             21 => Self::Yuv420SemiPlanar,
+            20 => Self::Yuv420PackedPlanar,
+            39 => Self::Yuv420PackedSemiPlanar,
             2135033992 => Self::Yuv420Flexible,
-            2141391872 | 2130706688 => Self::Yuv420PackedPlanar,
-            2141391876 => Self::Yuv420SemiPlanarVendorA,
-            2141391878 => Self::Yuv420FlexibleVendorA,
-            2130708361 => Self::Yuv420FlexibleVendorB,
-            2130706944 => Self::TiYuv420PackedSemiPlanar,
-            54 => Self::P010,
+            54 => Self::YuvP010,
+            2141391872 => Self::QcomYuv420SemiPlanar,
+            2130706688 => Self::TiYuv420PackedSemiPlanar,
+            2130708361 => Self::Surface,
             _ => Self::Unknown(v),
         }
     }
@@ -319,13 +319,13 @@ impl ColorFormat {
         match self {
             Self::Yuv420Planar => 19,
             Self::Yuv420SemiPlanar => 21,
+            Self::Yuv420PackedPlanar => 20,
+            Self::Yuv420PackedSemiPlanar => 39,
             Self::Yuv420Flexible => 2135033992,
-            Self::Yuv420PackedPlanar => 2141391872,
-            Self::Yuv420SemiPlanarVendorA => 2141391876,
-            Self::Yuv420FlexibleVendorA => 2141391878,
-            Self::Yuv420FlexibleVendorB => 2130708361,
-            Self::TiYuv420PackedSemiPlanar => 2130706944,
-            Self::P010 => 54,
+            Self::YuvP010 => 54,
+            Self::QcomYuv420SemiPlanar => 2141391872,
+            Self::TiYuv420PackedSemiPlanar => 2130706688,
+            Self::Surface => 2130708361,
             Self::Unknown(v) => v,
         }
     }
