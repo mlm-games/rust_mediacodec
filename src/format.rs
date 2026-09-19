@@ -154,6 +154,14 @@ impl MediaFormat {
         }
     }
 
+    /// Read the `color-format` key as a typed [`ColorFormat`] instead of a
+    /// raw `i32`, so callers do not scatter hard-coded MediaCodec color
+    /// constants or silently default unknown values to NV12.
+    #[must_use]
+    pub fn color_format(&self) -> Option<ColorFormat> {
+        self.get_i32("color-format").map(ColorFormat::from_i32)
+    }
+
     #[must_use]
     pub fn set_i64(&mut self, name: &str, value: i64) -> bool {
         let name = cstr(name);
@@ -270,3 +278,55 @@ impl fmt::Display for MediaFormat {
 // NEEDED FOR BAABA, DO NOT REMOVE
 unsafe impl Send for MediaFormat {}
 unsafe impl Sync for MediaFormat {}
+
+/// Well-known `MediaCodecInfo.CodecCapabilities` `color-format` values.
+///
+/// Only the layouts `baa4ba` can convert to CPU buffers are decoded into
+/// pixel formats; everything else surfaces as `Unknown` so the caller
+/// reports `unsupported-output-format` instead of misreading the buffer
+/// as NV12.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorFormat {
+    Yuv420Planar,
+    Yuv420SemiPlanar,
+    Yuv420Flexible,
+    Yuv420PackedPlanar,
+    Yuv420SemiPlanarVendorA,
+    Yuv420FlexibleVendorA,
+    Yuv420FlexibleVendorB,
+    TiYuv420PackedSemiPlanar,
+    P010,
+    Unknown(i32),
+}
+
+impl ColorFormat {
+    pub fn from_i32(v: i32) -> Self {
+        match v as u32 {
+            19 => Self::Yuv420Planar,
+            21 => Self::Yuv420SemiPlanar,
+            2135033992 => Self::Yuv420Flexible,
+            2141391872 => Self::Yuv420PackedPlanar,
+            2141391876 => Self::Yuv420SemiPlanarVendorA,
+            2141391878 => Self::Yuv420FlexibleVendorA,
+            2130708361 => Self::Yuv420SemiPlanarVendorA,
+            2130706688 => Self::Yuv420PackedPlanar,
+            2130706944 => Self::TiYuv420PackedSemiPlanar,
+            54 => Self::P010,
+            _ => Self::Unknown(v),
+        }
+    }
+
+    pub fn raw(self) -> i32 {
+        match self {
+            Self::Yuv420Planar => 19,
+            Self::Yuv420SemiPlanar => 21,
+            Self::Yuv420Flexible => 2135033992,
+            Self::Yuv420PackedPlanar => 2141391872,
+            Self::Yuv420SemiPlanarVendorA => 2141391876,
+            Self::Yuv420FlexibleVendorA => 2141391878,
+            Self::TiYuv420PackedSemiPlanar => 2130706944,
+            Self::P010 => 54,
+            Self::Unknown(v) => v,
+        }
+    }
+}
