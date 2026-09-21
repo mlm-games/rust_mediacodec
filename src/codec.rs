@@ -390,13 +390,6 @@ unsafe extern "C" {
     #[cfg(feature = "api28")]
     fn AMediaCodec_releaseName(codec: *mut AMediaCodec, name: *mut c_char);
 
-    /// Get the input format of this codec. Must be called after configure.
-    /// The caller owns the returned format.
-    /// <hr />
-    /// Since: API 28
-    #[cfg(feature = "api28")]
-    fn AMediaCodec_getInputFormat(codec: *mut AMediaCodec) -> *mut AMediaFormat;
-
     /// Set an asynchronous callback for actionable AMediaCodec events.
     /// When asynchronous callback is enabled, the client should not call `AMediaCodec_getInputBuffer`, `AMediaCodec_getOutputBuffer`, `AMediaCodec_dequeueInputBuffer` or `AMediaCodec_dequeueOutputBuffer`.
     ///
