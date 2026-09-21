@@ -390,6 +390,13 @@ unsafe extern "C" {
     #[cfg(feature = "api28")]
     fn AMediaCodec_releaseName(codec: *mut AMediaCodec, name: *mut c_char);
 
+    /// Get the input format of this codec. Must be called after configure.
+    /// The caller owns the returned format.
+    /// <hr />
+    /// Since: API 28
+    #[cfg(feature = "api28")]
+    fn AMediaCodec_getInputFormat(codec: *mut AMediaCodec) -> *mut AMediaFormat;
+
     /// Set an asynchronous callback for actionable AMediaCodec events.
     /// When asynchronous callback is enabled, the client should not call `AMediaCodec_getInputBuffer`, `AMediaCodec_getOutputBuffer`, `AMediaCodec_dequeueInputBuffer` or `AMediaCodec_dequeueOutputBuffer`.
     ///
@@ -941,6 +948,40 @@ impl MediaCodec {
 
             Some(MediaFormat::from_raw(format))
         }
+    }
+
+    /// Component name selected for this decoder (e.g. `c2.qti.avc.decoder`).
+    /// Only available with the `api28` feature; `None` without it or on failure.
+    #[must_use]
+    pub fn name(&self) -> Option<String> {
+        #[cfg(feature = "api28")]
+        unsafe {
+            let mut out: *mut c_char = null_mut();
+            if AMediaCodec_getName(self.inner, &mut out) != 0 || out.is_null() {
+                return None;
+            }
+            let name = std::ffi::CStr::from_ptr(out).to_string_lossy().into_owned();
+            AMediaCodec_releaseName(self.inner, out);
+            Some(name)
+        }
+        #[cfg(not(feature = "api28"))]
+        None
+    }
+
+    /// Input format accepted by the codec after configure. Only available
+    /// with the `api28` feature; `None` without it or on failure.
+    #[must_use]
+    pub fn input_format(&self) -> Option<MediaFormat> {
+        #[cfg(feature = "api28")]
+        unsafe {
+            let format = AMediaCodec_getInputFormat(self.inner);
+            if format.is_null() {
+                return None;
+            }
+            Some(MediaFormat::from_raw(format))
+        }
+        #[cfg(not(feature = "api28"))]
+        None
     }
 
     fn refresh_output_format(&mut self) -> Option<MediaFormat> {
