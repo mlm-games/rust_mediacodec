@@ -175,11 +175,10 @@ impl NativeWindow {
     }
 
     #[cfg(feature = "api26")]
-    pub fn to_surface<'local>(
-        &self,
-        env: &mut jni::Env<'local>,
-    ) -> jni::objects::JObject<'local> {
-        unsafe { jni::objects::JObject::from_raw(env, ANativeWindow_toSurface(env.get_raw(), self.inner)) }
+    pub fn to_surface<'local>(&self, env: &mut jni::Env<'local>) -> jni::objects::JObject<'local> {
+        unsafe {
+            jni::objects::JObject::from_raw(env, ANativeWindow_toSurface(env.get_raw(), self.inner))
+        }
     }
 
     pub fn width(&self) -> i32 {
