@@ -56,6 +56,7 @@ pub enum BufferFlag {
     CodecConfig = 2,
     EndOfStream = 4,
     PartialFrame = 8,
+    DecodeOnly = 32,
 }
 
 impl TryFrom<i32> for BufferFlag {
@@ -67,6 +68,7 @@ impl TryFrom<i32> for BufferFlag {
             2 => Ok(Self::CodecConfig),
             4 => Ok(Self::EndOfStream),
             8 => Ok(Self::PartialFrame),
+            32 => Ok(Self::DecodeOnly),
             _ => Err(String::from("Not Found")),
         }
     }
@@ -629,6 +631,7 @@ pub struct CodecOutputBuffer<'a> {
     _size: usize,
     format: MediaFormat,
     render: bool,
+    render_at_time: Option<i64>,
 }
 
 impl CodecOutputBuffer<'_> {
@@ -651,6 +654,7 @@ impl CodecOutputBuffer<'_> {
             _size: size,
             _marker: PhantomData,
             render: false,
+            render_at_time: None,
             format,
         }
     }
@@ -810,12 +814,24 @@ impl CodecOutputBuffer<'_> {
     pub fn set_render(&mut self, render: bool) {
         self.render = render;
     }
+
+    /// Set the surface timestamp (nanoseconds) for this buffer. When set, the
+    /// buffer renders on the output surface at that timestamp instead of
+    /// immediately, so a display-synchronised caller can pace rendering
+    /// without waiting for the frame to be drawn.
+    pub fn set_render_at_time(&mut self, timestamp_ns: i64) {
+        self.render_at_time = Some(timestamp_ns);
+    }
 }
 
 impl Drop for CodecOutputBuffer<'_> {
     fn drop(&mut self) {
         unsafe {
-            AMediaCodec_releaseOutputBuffer(self.codec, self.index, self.render);
+            if let Some(timestamp_ns) = self.render_at_time {
+                AMediaCodec_releaseOutputBufferAtTime(self.codec, self.index, timestamp_ns);
+            } else {
+                AMediaCodec_releaseOutputBuffer(self.codec, self.index, self.render);
+            }
         }
     }
 }
@@ -909,6 +925,31 @@ impl MediaCodec {
         }
     }
 
+    /// Creates a surface that can be used as input to an encoder, in place of
+    /// input buffers. Must be called after `init` and before `start`.
+    ///
+    /// The caller owns the returned surface; the reference is released when the
+    /// [`NativeWindow`] is dropped.
+    ///
+    /// Only available with the `api26` feature; returns
+    /// [`MediaStatus::ErrorUnsupported`] without it.
+    pub fn create_input_surface(&mut self) -> Result<NativeWindow, MediaStatus> {
+        #[cfg(feature = "api26")]
+        unsafe {
+            let mut window: *mut ANativeWindow = null_mut();
+            MediaStatus::make_result(AMediaCodec_createInputSurface(self.inner, &mut window))?;
+            if window.is_null() {
+                return Err(MediaStatus::ErrorUnknown);
+            }
+            Ok(NativeWindow::from_raw(window))
+        }
+        #[cfg(not(feature = "api26"))]
+        {
+            let _ = self;
+            Err(MediaStatus::ErrorUnsupported)
+        }
+    }
+
     /// Starts the codec for processing.
     ///
     /// This must be called only after the codec has been initialized
@@ -928,6 +969,47 @@ impl MediaCodec {
     /// Make sure you have released all pending buffers before calling this function
     pub fn flush(&mut self) -> Result<(), MediaStatus> {
         unsafe { MediaStatus::make_result(AMediaCodec_flush(self.inner)) }
+    }
+
+    /// Signals end-of-stream on input. Equivalent to submitting an empty buffer
+    /// with [`BufferFlag::EndOfStream`] set, but goes through the encoder's
+    /// input surface when one was created with [`create_input_surface`].
+    ///
+    /// This only works while the codec is running and taking input from a
+    /// surface; otherwise submit the end-of-stream buffer through
+    /// [`dequeue_input`](MediaCodec::dequeue_input).
+    ///
+    /// Only available with the `api26` feature; returns
+    /// [`MediaStatus::ErrorUnsupported`] without it.
+    pub fn signal_end_of_input_stream(&mut self) -> Result<(), MediaStatus> {
+        #[cfg(feature = "api26")]
+        unsafe {
+            MediaStatus::make_result(AMediaCodec_signalEndOfInputStream(self.inner))
+        }
+        #[cfg(not(feature = "api26"))]
+        {
+            let _ = self;
+            Err(MediaStatus::ErrorUnsupported)
+        }
+    }
+
+    /// Updates the codec's parameters while it is running. The format carries
+    /// the parameters to apply, e.g. `video-bitrate` for a bitrate change
+    /// without restarting the encoder.
+    ///
+    /// Only available with the `api26` feature; returns
+    /// [`MediaStatus::ErrorUnsupported`] without it. Some parameter changes may
+    /// silently fail to apply, which the status does not distinguish.
+    pub fn set_parameters(&mut self, format: &MediaFormat) -> Result<(), MediaStatus> {
+        #[cfg(feature = "api26")]
+        unsafe {
+            MediaStatus::make_result(AMediaCodec_setParameters(self.inner, format.inner.ptr))
+        }
+        #[cfg(not(feature = "api26"))]
+        {
+            let _ = (self, format);
+            Err(MediaStatus::ErrorUnsupported)
+        }
     }
 
     /// Returns the output format of this codec (if we can find one)
